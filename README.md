@@ -68,6 +68,33 @@ python phototag.py write "/Volumes/Book/Photos/2019"
 python phototag.py write
 ```
 
+### The window (optional)
+
+`phototag_gui.py` puts the same four steps in a small window: a folder picker,
+**Scan**, **Tag**, **Review** and **Write** buttons with a note under each
+saying what it does and how the last run went, a progress bar, a **Stop**
+button, and a log. Each button runs the same command you'd type in Terminal,
+so everything above still applies.
+
+One-time setup: Tkinter, the toolkit it uses, needs one extra Homebrew package:
+
+```sh
+brew install python-tk@3.12
+```
+
+Then double-click **`phototag.command`** in Finder (it opens a Terminal window
+alongside; leave that open). Or run `python phototag_gui.py` with the
+environment active. If macOS refuses to open `phototag.command`, run
+`chmod +x phototag.command` once in this folder.
+
+- **Write starts in Preview mode** (dry run) for safety. Untick
+  *Preview only* to actually write sidecars.
+- **Only photos in the folder above** limits Write to the chosen folder,
+  handy for writing one album and checking it in digiKam first.
+- **Stop** works like Ctrl-C: progress so far is saved.
+- The **Review** list fills in after a Tag run and includes top-level tags.
+- The window remembers the last folder and tag in `~/.phototag/gui.json`.
+
 On an M1 Pro, expect very roughly 5–15 photos per second, depending mostly on
 how fast the drive reads RAW files. Later scans only look at new or changed files.
 
@@ -196,6 +223,7 @@ If something else breaks, the full error text is what's needed to fix it.
   elsewhere, e.g. `~/code-ai/scripts/python/phototag/cache`.
 - **`~/.cache/huggingface`:** the SigLIP scene model.
 - **`~/Library/Application Support/Ultralytics`:** a small settings file.
+- **`~/.phototag/gui.json`:** the window's last folder and tag.
 
 ## Notes and limits
 
