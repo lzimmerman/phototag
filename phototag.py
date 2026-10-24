@@ -56,6 +56,7 @@ RAW_EXTS = {
 RASTER_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png", ".webp"} | (
     {".heic", ".heif"} if HEIF else set()
 )
+BROWSER_VIEWABLE = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 SKIP_DIRS = {".dtrash", "@eaDir", "#recycle", "$RECYCLE.BIN", "System Volume Information"}
 
 META_TAGS = [
@@ -974,8 +975,12 @@ def cmd_review(args, cfg):
         subs = [h[len(tag) + 1:] for h in (extra[0] if extra else []) if h != tag]
         if subs:
             label = f"<b>{html.escape(', '.join(subs))}</b> · {label}"
-        cards.append(f'<figure title="{html.escape(r["path"])}"><img loading="lazy" src="thumbs/{r["thumb"]}">'
-                     f'<figcaption>{label}</figcaption></figure>')
+        p = Path(r["path"])
+        img = f'<img loading="lazy" src="thumbs/{r["thumb"]}">'
+        if p.suffix.lower() in BROWSER_VIEWABLE:  # browsers can show these originals, not RAWs
+            img = f'<a href="{html.escape(p.as_uri())}" target="_blank" title="Open the original">{img}</a>'
+        cards.append(f'<figure>{img}<figcaption>{label}</figcaption>'
+                     f'<div class="path" title="Click to copy the path">{html.escape(str(p))}</div></figure>')
     safe = "".join(c if c.isalnum() else "_" for c in tag)
     out = args.cache / f"review_{safe}.html"
     out.write_text(f"""<!doctype html><meta charset="utf-8"><title>{html.escape(tag)}</title>
@@ -988,8 +993,23 @@ h1{{font-size:20px;margin:0 0 4px}} p{{color:var(--muted);margin:0 0 18px}}
 figure{{margin:0}} img{{width:100%;aspect-ratio:1;object-fit:cover;border-radius:4px;background:#8882}}
 figcaption{{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
 .line{{grid-column:1/-1;border-top:2px solid #d33;color:#d33;font-size:12px;padding-top:2px}}
-</style><h1>{html.escape(tag)} <small>({len(items)} shown)</small></h1><p>{subtitle}</p>
-<div class="grid">{''.join(cards)}</div>""", encoding="utf-8")
+.path{{font-size:10px;color:var(--muted);word-break:break-all;cursor:copy;line-height:1.3;margin-top:1px}}
+.path:hover{{color:var(--fg);text-decoration:underline}}
+#toast{{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#333;color:#fff;
+padding:6px 12px;border-radius:6px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none}}
+</style><h1>{html.escape(tag)} <small>({len(items)} shown)</small></h1><p>{subtitle}
+Click a path to copy it (in Finder, press ⌘⇧G and paste to go there). Click a JPEG, PNG or HEIC thumbnail to open the original.</p>
+<div class="grid">{''.join(cards)}</div><div id="toast">Path copied</div>
+<script>
+document.addEventListener("click", e => {{
+  const el = e.target.closest(".path"); if (!el) return;
+  const text = el.textContent, done = () => {{
+    const t = document.getElementById("toast"); t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 1200); }};
+  const fallback = () => {{ const a = document.createElement("textarea"); a.value = text; document.body.appendChild(a);
+    a.select(); try {{ document.execCommand("copy"); done(); }} catch (_) {{}} a.remove(); }};
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+}});
+</script>""", encoding="utf-8")
     print(out)
     if not args.no_open:
         webbrowser.open(out.as_uri())

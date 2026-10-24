@@ -26,6 +26,7 @@ few descriptive phrases), change thresholds, turn groups off.
 
 ```sh
 brew install exiftool python@3.12
+brew install python-tk@3.12               # only needed for the window (phototag_gui.py)
 mkdir -p ~/code-ai/scripts/python && cd ~/code-ai/scripts/python
 unzip ~/Downloads/phototag.zip            # creates ./phototag
 cd phototag
@@ -162,6 +163,9 @@ Practical points:
 
 - With a few dozen photos the ranking is thin; a few hundred gives a much
   clearer picture of where the cutoff should go.
+- Each thumbnail shows the photo's full path: click it to copy, then in Finder
+  press ⌘⇧G and paste to go straight to the file. Clicking a JPEG, PNG or HEIC
+  thumbnail opens the original in a new tab (browsers can't display RAW files).
 - Pages are saved in `~/.phototag` as `review_<tag>.html`. Add `--no-open` to
   create one without opening a browser.
 - To see why one photo did or didn't get a tag, run `explain` on it: it shows
