@@ -1,0 +1,11 @@
+numpy
+pillow
+pillow-heif          # HEIC/HEIF support (iPhone photos)
+torch                # uses the Apple GPU (mps) on M-series Macs
+open_clip_torch      # SigLIP scene scoring
+transformers         # tokenizer for SigLIP models
+sentencepiece
+ultralytics          # YOLO person/animal/vehicle detection
+reverse_geocoder     # offline GPS -> place names
+pycountry
+# rawpy              # optional: develops RAWs that have no embedded preview (rare)

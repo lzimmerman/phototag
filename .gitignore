@@ -1,0 +1,11 @@
+# Python virtual environment and bytecode
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+._*
+
+# local cache, if --cache points inside this folder
+cache/

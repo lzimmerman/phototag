@@ -1,0 +1,201 @@
+# phototag configuration
+#
+# Edit freely, then re-run `python phototag.py tag` (fast, no rescanning) and
+# `python phototag.py write` to update the sidecars.
+# Changing [models] needs a rescan: `python phototag.py scan ROOT --rescan-ml`.
+#
+# Tag names use "|" for hierarchy. Don't use "/" in names (digiKam treats it
+# as a hierarchy separator too).
+
+# Every tag is written under this top-level tag, e.g. "Auto|Scene|Landscape".
+# That keeps automatic tags apart from your own and makes them easy to hide
+# or remove in digiKam.
+root = "Auto"
+
+[sidecar]
+# "digikam"   -> IMG_0001.CR2.xmp  (digiKam's default naming)
+# "lightroom" -> IMG_0001.xmp      (only if digiKam is set to "commercial" naming;
+#                                   avoid with RAW+JPEG pairs, which would share one file)
+style = "digikam"
+
+[models]
+# SigLIP image/text model (open_clip names). If this one isn't available in
+# your open_clip version, phototag falls back to ViT-B-16-SigLIP / webli.
+clip = "ViT-B-16-SigLIP2-256"
+clip_pretrained = "webli"
+# Ultralytics YOLO detector for people/animals/vehicles (downloads on first use).
+yolo = "yolo11s.pt"
+# "auto" picks Apple GPU (mps) when available, else cpu.
+device = "auto"
+
+# ---------------------------------------------------------------- computed ---
+
+[color]
+enabled = true
+# Colour is measured on a 0-128 chroma scale (use `explain` to see a photo's values).
+# "spread" = how far pixels stray from the photo's average colour. A B&W or
+# toned image has almost none; JPEG noise adds a little.
+bw_max_chroma = 7.0        # 99th-percentile spread below this => monochrome
+toned_min_tint = 3.0       # monochrome with an average tint above this => "Toned" (sepia, selenium...)
+toned_max_tint = 30.0      # stronger tints are single-colour subjects (blue sky), not toning
+
+[light]
+enabled = true
+low_key_max = 0.22         # mean brightness (0-1) at or below => Low key
+high_key_min = 0.75        # mean brightness at or above => High key
+
+[format]
+enabled = true
+panorama_min_ratio = 2.0   # long side / short side
+square_max_ratio = 1.05
+
+# -------------------------------------------------------------------- EXIF ---
+
+[exif]
+camera = true
+lens = true
+season = true
+hemisphere = "north"       # used when a photo has no GPS position
+time_of_day = true
+golden_hour = true         # needs GPS + a known UTC time (GPS time or an offset tag)
+place = true               # offline reverse geocoding of GPS positions
+place_levels = ["country", "region", "city"]
+long_exposure_s = 0.5      # exposure time (seconds) at or above => Long exposure
+high_iso = 3200
+flash = true
+
+# Local clock hour at which each period starts (camera clock, so check that
+# your cameras were set to local time).
+time_of_day_starts = [[0, "Night"], [5, "Morning"], [11, "Midday"], [14, "Afternoon"], [18, "Evening"], [21, "Night"]]
+
+# 35mm-equivalent focal length upper bounds (exclusive), in mm.
+[exif.focal]
+"Ultra-wide" = 21
+"Wide" = 35
+"Normal" = 70
+"Short tele" = 135
+"Telephoto" = 100000
+
+# ---------------------------------------------------------- detection (YOLO) ---
+
+[people]
+enabled = true
+min_conf = 0.45            # detector confidence
+min_area = 0.002           # ignore people smaller than this fraction of the frame
+portrait_area = 0.15       # 1-2 people and the largest covers this much => People|Portrait
+small_figure_area = 0.03   # largest person smaller than this => People|Small figures
+tag_none = false           # also tag photos with nobody in them as People|None
+
+[objects]
+enabled = true
+min_conf = 0.5
+min_area = 0.005
+
+# COCO class name = tag. Remove lines you don't care about; see
+# https://docs.ultralytics.com/datasets/detect/coco/ for the 80 class names.
+[objects.classes]
+dog = "Animals|Dog"
+cat = "Animals|Cat"
+bird = "Animals|Bird"
+horse = "Animals|Horse"
+sheep = "Animals|Farm animals"
+cow = "Animals|Farm animals"
+elephant = "Animals|Wild animals"
+bear = "Animals|Wild animals"
+zebra = "Animals|Wild animals"
+giraffe = "Animals|Wild animals"
+car = "Vehicles|Car"
+motorcycle = "Vehicles|Motorcycle"
+bicycle = "Vehicles|Bicycle"
+bus = "Vehicles|Bus"
+truck = "Vehicles|Truck"
+train = "Vehicles|Train"
+boat = "Vehicles|Boat"
+airplane = "Vehicles|Aircraft"
+
+# --------------------------------------------------------- scenes (SigLIP) ---
+#
+# Each [[scene]] is scored independently (0-1), so a photo can get several.
+# Several phrasings per tag are averaged, which is more robust than one.
+# Thresholds are starting guesses: use `python phototag.py review "<tag>"`
+# to see photos ranked by score and pick a cutoff for your own library.
+
+[scenes]
+enabled = true
+default_threshold = 0.10
+
+[[scene]]
+tag = "Scene|Landscape"
+prompts = ["a landscape photograph", "a scenic view of nature", "wide open countryside scenery"]
+
+[[scene]]
+tag = "Scene|Mountains"
+prompts = ["a photo of mountains", "a mountain range", "rocky alpine peaks"]
+
+[[scene]]
+tag = "Scene|Coast and beach"
+prompts = ["a photo of a beach", "the sea coast", "ocean waves on the shore"]
+
+[[scene]]
+tag = "Scene|Lakes and rivers"
+prompts = ["a photo of a lake", "a river flowing through the land", "a waterfall"]
+
+[[scene]]
+tag = "Scene|Forest"
+prompts = ["a photo of a forest", "trees in the woods", "a path through woodland"]
+
+[[scene]]
+tag = "Scene|Snow"
+prompts = ["a snowy winter scene", "snow covered ground", "people in the snow"]
+
+[[scene]]
+tag = "Scene|Sky and clouds"
+prompts = ["a photo of dramatic clouds in the sky", "a big open sky", "storm clouds"]
+
+[[scene]]
+tag = "Scene|Sunset and sunrise"
+prompts = ["a photo of a sunset", "a sunrise over the horizon", "golden evening light at dusk"]
+
+[[scene]]
+tag = "Scene|Night"
+prompts = ["a photo taken at night", "city lights at night", "a starry night sky"]
+
+[[scene]]
+tag = "Scene|City and street"
+prompts = ["a city street", "street photography in a town", "an urban cityscape"]
+
+[[scene]]
+tag = "Scene|Architecture"
+prompts = ["a photo of a building's architecture", "the facade of a historic building", "a church or cathedral"]
+
+[[scene]]
+tag = "Scene|Indoors"
+prompts = ["a photo taken indoors", "the inside of a room", "an interior of a house"]
+
+[[scene]]
+tag = "Subject|Flowers and plants"
+prompts = ["a close-up photo of flowers", "a garden with plants", "a single flower"]
+
+[[scene]]
+tag = "Subject|Food and drink"
+prompts = ["a photo of food on a plate", "a meal on a table", "a drink in a glass"]
+
+[[scene]]
+tag = "Subject|Wildlife"
+prompts = ["a photo of a wild animal in nature", "wildlife photography", "a bird in the wild"]
+
+[[scene]]
+tag = "Style|Macro and close-up"
+prompts = ["a macro photograph", "an extreme close-up of a small object", "a close-up of an insect"]
+
+[[scene]]
+tag = "Style|Silhouette"
+prompts = ["a silhouette against the sky", "a dark silhouette of a person against bright light"]
+
+[[scene]]
+tag = "Style|Minimal"
+prompts = ["a minimalist photograph", "a simple composition with lots of empty space"]
+
+[[scene]]
+tag = "Style|Aerial"
+prompts = ["an aerial photograph", "a view from an airplane window", "a drone shot looking down"]
