@@ -116,6 +116,45 @@ def summarise(step: str, lines: list[str], code: int, stopped: bool) -> str:
     return "Done."
 
 
+# Colours. The normal look keeps the system theme (on macOS the buttons are drawn
+# by macOS and can't be recoloured) and only darkens the text around them; high
+# contrast switches to Tk's "clam" theme, where every colour can be set.
+LOOKS = {
+    ("normal", "light"): {"note": "#3a3a3a", "error": "#8f0f07"},
+    ("normal", "dark"): {"note": "#d0d0d0", "error": "#ff8a80"},
+    ("high", "light"): {"bg": "#ffffff", "fg": "#000000", "button": "#003a8c", "button_fg": "#ffffff",
+                        "active": "#0050c0", "pressed": "#00255c", "border": "#000000",
+                        "disabled": "#d4d4d4", "disabled_fg": "#333333",
+                        "note": "#000000", "error": "#a30000"},
+    ("high", "dark"): {"bg": "#000000", "fg": "#ffffff", "button": "#8cc4ff", "button_fg": "#000000",
+                       "active": "#b3d9ff", "pressed": "#5fa8f5", "border": "#ffffff",
+                       "disabled": "#3a3a3a", "disabled_fg": "#e0e0e0",
+                       "note": "#ffffff", "error": "#ff8a80"},
+}
+
+
+def contrast(a: str, b: str) -> float:
+    """WCAG contrast ratio of two #rrggbb colours (7 or more is the AAA level for text)."""
+    def lum(c):
+        ch = [int(c[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in ch]
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def tk_missing_help() -> str:
+    v = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if sys.platform == "darwin":
+        how = f"    brew install python-tk@{v}"
+    else:
+        how = ("    sudo apt install python3-tk        (Debian, Ubuntu, Mint)\n"
+               "    sudo dnf install python3-tkinter   (Fedora)\n"
+               "    sudo pacman -S tk                  (Arch)")
+    return (f"Tkinter isn't available in this Python ({v}). Install it:\n{how}\n"
+            "then run this again (no need to recreate the .venv).")
+
+
 def load_settings() -> dict:
     try:
         return json.loads(SETTINGS.read_text())
@@ -138,11 +177,10 @@ def main():
     try:
         import tkinter as tk
         from tkinter import filedialog, ttk
+        from tkinter import font as tkfont
         from tkinter.scrolledtext import ScrolledText
     except ImportError:
-        sys.exit("Tkinter isn't available in this Python. With Homebrew Python 3.12:\n"
-                 "    brew install python-tk@3.12\n"
-                 "then run this again (no need to recreate the .venv).")
+        sys.exit(tk_missing_help())
 
     settings = load_settings()
     root = tk.Tk()
@@ -150,6 +188,17 @@ def main():
     root.minsize(640, 560)
     events: queue.Queue = queue.Queue()
     state = {"proc": None, "step": None, "lines": [], "stopped": False}
+
+    style = ttk.Style(root)
+    native_theme = style.theme_use()
+    fonts = {n: tkfont.nametofont(n) for n in ("TkDefaultFont", "TkTextFont", "TkHeadingFont", "TkMenuFont")}
+    native_sizes = {n: f.actual()["size"] for n, f in fonts.items()}
+    log_font = tkfont.Font(family="Menlo" if sys.platform == "darwin" else "monospace", size=12)
+    look = {}
+
+    def is_dark() -> bool:
+        r, g, b = (v / 257 for v in root.winfo_rgb(style.lookup("TFrame", "background") or "white"))
+        return 0.299 * r + 0.587 * g + 0.114 * b < 128
 
     outer = ttk.Frame(root, padding=14)
     outer.pack(fill="both", expand=True)
@@ -167,6 +216,9 @@ def main():
             folder.set(d)
 
     ttk.Button(ff, text="Choose…", command=choose).pack(side="left")
+    high_contrast = tk.BooleanVar(value=settings.get("high_contrast", False))
+    ttk.Checkbutton(ff, text="High contrast", variable=high_contrast,
+                    command=lambda: (apply_look(), remember())).pack(side="left", padx=(14, 0))
 
     steps = ttk.Frame(outer)
     steps.pack(fill="x", pady=(12, 6))
@@ -178,7 +230,7 @@ def main():
         b.grid(row=row * 2, column=0, sticky="nw", pady=(8, 0))
         opts = ttk.Frame(steps)
         opts.grid(row=row * 2, column=1, sticky="w", padx=10, pady=(8, 0))
-        n = ttk.Label(steps, text=STEPS[key], foreground="gray", wraplength=520, justify="left")
+        n = ttk.Label(steps, text=STEPS[key], style="Note.TLabel", wraplength=520, justify="left")
         n.grid(row=row * 2 + 1, column=1, sticky="w", padx=10)
         buttons[key], notes[key] = b, n
         return opts
@@ -215,11 +267,67 @@ def main():
     bar.pack(side="left", fill="x", expand=True)
     stop_btn = ttk.Button(pf, text="Stop", state="disabled", command=lambda: stop())
     stop_btn.pack(side="left", padx=(8, 0))
-    status = ttk.Label(outer, text="Ready.", foreground="gray")
+    status = ttk.Label(outer, text="Ready.", style="Note.TLabel")
     status.pack(fill="x")
-    log = ScrolledText(outer, height=12, font=("Menlo", 11), wrap="word")
+    log = ScrolledText(outer, height=12, font=log_font, wrap="word")
     log.pack(fill="both", expand=True, pady=(6, 0))
     log.configure(state="disabled")
+    log_colours = {k: log.cget(k) for k in ("background", "foreground", "insertbackground",
+                                            "selectbackground", "selectforeground", "highlightbackground")}
+
+    def apply_look():
+        """Switch between the system look and high contrast; also used at start-up."""
+        high = high_contrast.get()
+        style.theme_use(native_theme)
+        if high:
+            p = LOOKS[("high", "dark" if is_dark() else "light")]
+            style.theme_use("clam")
+            style.configure(".", background=p["bg"], foreground=p["fg"], fieldbackground=p["bg"],
+                            bordercolor=p["border"], lightcolor=p["bg"], darkcolor=p["bg"],
+                            troughcolor=p["bg"], selectbackground=p["button"], selectforeground=p["button_fg"],
+                            insertcolor=p["fg"], focuscolor=p["fg"], arrowcolor=p["fg"])
+            style.configure("TButton", background=p["button"], foreground=p["button_fg"], padding=(10, 5),
+                            bordercolor=p["border"], lightcolor=p["button"], darkcolor=p["button"],
+                            font=("TkDefaultFont", native_sizes["TkDefaultFont"] + 2, "bold"))
+            style.map("TButton",
+                      background=[("disabled", p["disabled"]), ("pressed", p["pressed"]), ("active", p["active"])],
+                      foreground=[("disabled", p["disabled_fg"])],
+                      lightcolor=[("disabled", p["disabled"]), ("pressed", p["pressed"]), ("active", p["active"])],
+                      darkcolor=[("disabled", p["disabled"]), ("pressed", p["pressed"]), ("active", p["active"])])
+            style.configure("TCheckbutton", indicatorbackground=p["bg"], indicatorforeground=p["fg"])
+            style.map("TCheckbutton", background=[("active", p["bg"])],
+                      indicatorbackground=[("selected", p["button"]), ("active", p["bg"])],
+                      indicatorforeground=[("selected", p["button_fg"])])
+            style.map("TCombobox", fieldbackground=[("readonly", p["bg"])], foreground=[("readonly", p["fg"])],
+                      selectbackground=[("focus", p["button"])], selectforeground=[("focus", p["button_fg"])])
+            style.configure("TEntry", foreground=p["fg"])
+            style.configure("TSpinbox", foreground=p["fg"], arrowcolor=p["fg"])
+            style.configure("Horizontal.TProgressbar", background=p["button"], bordercolor=p["border"],
+                            lightcolor=p["button"], darkcolor=p["button"])
+            root.option_add("*TCombobox*Listbox.background", p["bg"])
+            root.option_add("*TCombobox*Listbox.foreground", p["fg"])
+            root.option_add("*TCombobox*Listbox.selectBackground", p["button"])
+            root.option_add("*TCombobox*Listbox.selectForeground", p["button_fg"])
+            log.configure(background=p["bg"], foreground=p["fg"], insertbackground=p["fg"],
+                          selectbackground=p["button"], selectforeground=p["button_fg"],
+                          highlightbackground=p["border"])
+            root.configure(background=p["bg"])
+            grow = 2
+        else:
+            p = LOOKS[("normal", "dark" if is_dark() else "light")]
+            log.configure(**log_colours)
+            grow = 0
+        for name, f in fonts.items():
+            f.configure(size=native_sizes[name] + grow)
+        log_font.configure(size=12 + grow)
+        style.configure("Note.TLabel", foreground=p["note"])
+        look.update(p)
+        for n in notes.values():
+            n.configure(wraplength=520 + 60 * grow)
+
+    def remember():
+        save_settings({"folder": folder.get().strip(), "tag": tag.get().strip(),
+                       "high_contrast": high_contrast.get()})
 
     def write_log(text: str):
         log.configure(state="normal")
@@ -246,10 +354,10 @@ def main():
         f = folder.get().strip()
         if step == "scan" or (step == "write" and only_folder.get()):
             if not f or not Path(f).expanduser().is_dir():
-                notes[step].configure(text="Choose a photos folder first (or check the drive is connected).", foreground="#c0392b")
+                notes[step].configure(text="Choose a photos folder first (or check the drive is connected).", foreground=look["error"])
                 return
         if step == "review" and not tag.get().strip():
-            notes[step].configure(text="Pick a tag from the list first (run Tag if the list is empty).", foreground="#c0392b")
+            notes[step].configure(text="Pick a tag from the list first (run Tag if the list is empty).", foreground=look["error"])
             return
         try:
             n = int(limit.get()) if use_limit.get() else None
@@ -257,7 +365,7 @@ def main():
             n = None
         cmd = build_command(step, str(Path(f).expanduser()) if f else "", n, no_ml.get(),
                             tag.get().strip(), dry.get(), only_folder.get())
-        save_settings({"folder": f, "tag": tag.get().strip()})
+        remember()
         write_log(f"\n$ phototag {' '.join(cmd[3:])}")
         notes[step].configure(text="Running…", foreground="")
         status.configure(text="Starting…")
@@ -322,7 +430,7 @@ def main():
                     bar.configure(mode="determinate", value=100 if val == 0 else bar.cget("value"))
                     msg = summarise(step, state["lines"], val, state["stopped"])
                     failed = val != 0 and not state["stopped"]
-                    notes[step].configure(text=msg, foreground="#c0392b" if failed else "")
+                    notes[step].configure(text=msg, foreground=look["error"] if failed else "")
                     status.configure(text="Ready.")
                     state["proc"] = None
                     set_running(False)
@@ -345,6 +453,7 @@ def main():
         root.destroy()
 
     root.protocol("WM_DELETE_WINDOW", on_close)
+    apply_look()
     refresh_tags()
     poll()
     root.mainloop()

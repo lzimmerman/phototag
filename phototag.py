@@ -75,6 +75,25 @@ def log(*a):
     print(*a, file=sys.stderr, flush=True)
 
 
+def time_left(seconds: float) -> str:
+    """'~40 s left', '~25 min left', '~1 h left', '~2 h 5 min left'."""
+    if seconds < 90:
+        return f"~{seconds:.0f} s left"
+    m = round(seconds / 60)
+    if m < 60:
+        return f"~{m} min left"
+    return f"~{m // 60} h {m % 60} min left" if m % 60 else f"~{m // 60} h left"
+
+
+def progress_line(i: int, total: int, elapsed: float, unit: str) -> str:
+    """'  120/2400 (5%)  3.1 photos/s  ~12 min left'; no estimate until there is enough to go on."""
+    rate = i / max(elapsed, 1e-6)
+    msg = f"  {i}/{total} ({100 * i / max(total, 1):.0f}%)  {rate:.1f} {unit}/s"
+    if i < total and (i >= 20 or elapsed >= 10):
+        msg += f"  {time_left((total - i) / rate)}"
+    return msg
+
+
 # --------------------------------------------------------------- exiftool ---
 
 
@@ -428,6 +447,8 @@ def cmd_scan(args, cfg):
         return
 
     et = ExifTool()
+    if use_ml:
+        log("Loading the image models (the first time this downloads them)...")
     clip = Clip(cfg) if use_ml else None
     det = Detector(cfg, args.cache) if use_ml else None
     pool = ThreadPoolExecutor(max_workers=4)
@@ -481,9 +502,7 @@ def cmd_scan(args, cfg):
                 db.execute("INSERT OR REPLACE INTO photos VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", row)
             db.commit()
             done += len(batch)
-            rate = done / (time.time() - t0)
-            eta = (len(todo) - done) / rate if rate else 0
-            print(f"\r  {done}/{len(todo)}  {rate:.1f} photos/s  ~{eta / 60:.0f} min left   ", end="", file=sys.stderr, flush=True)
+            print(f"\r{progress_line(done, len(todo), time.time() - t0, 'photos')}   ", end="", file=sys.stderr, flush=True)
     except KeyboardInterrupt:
         log("\nStopped; progress so far is saved. Run the same command to continue.")
     finally:
@@ -886,11 +905,8 @@ def cmd_write(args, cfg):
         if not final and now - last < 0.25:
             return
         last = now
-        rate = i / max(now - t0, 1e-6)
-        eta = (total - i) / rate if rate else 0
-        left = f"~{eta / 60:.0f} min left" if eta >= 60 else f"~{eta:.0f} s left"
         counts = "  ".join(f"{v} {k}" for k, v in stats.items() if v)
-        print(f"\r  {i}/{total} ({100 * i / total:.0f}%)  {rate:.0f}/s  {left}  {counts}   ",
+        print(f"\r{progress_line(i, total, now - t0, 'sidecars')}  {counts}   ",
               end="", file=sys.stderr, flush=True)
 
     log(f"Writing {total} sidecars...")

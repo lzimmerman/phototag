@@ -93,8 +93,16 @@ environment active. If macOS refuses to open `phototag.command`, run
 - **Only photos in the folder above** limits Write to the chosen folder,
   handy for writing one album and checking it in digiKam first.
 - **Stop** works like Ctrl-C: progress so far is saved.
+- Under the progress bar, Scan and Write show how far they've got, the
+  speed, and the time left (shown once there's enough to estimate from).
 - The **Review** list fills in after a Tag run and includes top-level tags.
-- The window remembers the last folder and tag in `~/.phototag/gui.json`.
+- **High contrast** (top right) switches to a bolder look: black on white,
+  or white on black in dark mode, with solid-coloured buttons and larger
+  text. Without it, the window uses the normal macOS look, whose buttons
+  only macOS can restyle: turn on System Settings → Accessibility →
+  Display → *Increase contrast* to strengthen them.
+- The window remembers the last folder, tag and High contrast setting in
+  `~/.phototag/gui.json`.
 
 On an M1 Pro, expect very roughly 5–15 photos per second, depending mostly on
 how fast the drive reads RAW files. Later scans only look at new or changed files.
@@ -227,7 +235,7 @@ If something else breaks, the full error text is what's needed to fix it.
   elsewhere, e.g. `~/code-ai/scripts/python/phototag/cache`.
 - **`~/.cache/huggingface`:** the SigLIP scene model.
 - **`~/Library/Application Support/Ultralytics`:** a small settings file.
-- **`~/.phototag/gui.json`:** the window's last folder and tag.
+- **`~/.phototag/gui.json`:** the window's last folder, tag and High contrast setting.
 
 ## Notes and limits
 
