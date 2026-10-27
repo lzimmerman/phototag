@@ -40,7 +40,7 @@ STEPS = {
 
 
 def build_command(step: str, folder: str = "", limit: int | None = None, no_ml=False,
-                  tag: str = "", dry_run=False, only_folder=False) -> list[str]:
+                  tag: str = "", dry_run=False, only_folder=False, retry=False) -> list[str]:
     cmd = [sys.executable, "-u", str(SCRIPT), step]
     if step == "scan":
         cmd.append(folder)
@@ -48,6 +48,8 @@ def build_command(step: str, folder: str = "", limit: int | None = None, no_ml=F
             cmd += ["--limit", str(limit)]
         if no_ml:
             cmd.append("--no-ml")
+        if retry:
+            cmd.append("--retry-errors")
     elif step == "review":
         cmd.append(tag)
     elif step == "write":
@@ -103,7 +105,9 @@ def summarise(step: str, lines: list[str], code: int, stopped: bool) -> str:
         if todo == 0:
             return f"All {found} photos were already analysed. Next: Tag."
         rest = f" ({found - todo} were already up to date)" if found > todo else ""
-        return f"Analysed {todo} photos{rest}. Next: Tag."
+        bad = re.search(r"(\d+) photos? couldn't be read", find(r"couldn't be read") or "")
+        bad = f" {bad.group(1)} couldn't be read (listed in the log)." if bad else ""
+        return f"Analysed {todo} photo{'s' if todo > 1 else ''}{rest}.{bad} Next: Tag."
     if step == "tag":
         n = find(r"photos tagged") or "Done."
         p = find(r"sidecars to write")
@@ -244,6 +248,8 @@ def main():
     ttk.Spinbox(o, from_=10, to=100000, increment=50, textvariable=limit, width=7).pack(side="left", padx=(2, 4))
     ttk.Label(o, text="photos").pack(side="left", padx=(0, 14))
     ttk.Checkbutton(o, text="EXIF and colour only (quick)", variable=no_ml).pack(side="left")
+    retry = tk.BooleanVar(value=False)
+    ttk.Checkbutton(o, text="Retry unreadable photos", variable=retry).pack(side="left", padx=(14, 0))
 
     step_row(1, "tag", "2. Tag")
 
@@ -364,7 +370,7 @@ def main():
         except ValueError:
             n = None
         cmd = build_command(step, str(Path(f).expanduser()) if f else "", n, no_ml.get(),
-                            tag.get().strip(), dry.get(), only_folder.get())
+                            tag.get().strip(), dry.get(), only_folder.get(), retry.get())
         remember()
         write_log(f"\n$ phototag {' '.join(cmd[3:])}")
         notes[step].configure(text="Running…", foreground="")

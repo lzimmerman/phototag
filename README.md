@@ -93,6 +93,8 @@ environment active. If macOS refuses to open `phototag.command`, run
 - **Only photos in the folder above** limits Write to the chosen folder,
   handy for writing one album and checking it in digiKam first.
 - **Stop** works like Ctrl-C: progress so far is saved.
+- **Retry unreadable photos** (next to Scan) tries the photos an earlier scan
+  couldn't read again, e.g. after reconnecting a drive or repairing files.
 - Under the progress bar, Scan and Write show how far they've got, the
   speed, and the time left (shown once there's enough to estimate from).
 - The **Review** list fills in after a Tag run and includes top-level tags.
@@ -111,7 +113,7 @@ how fast the drive reads RAW files. Later scans only look at new or changed file
 
 | Command | What it does |
 |---|---|
-| `scan ROOT…` | Analyse photos and cache the results in `~/.phototag`. `--limit N` for a trial, `--no-ml` for EXIF/colour only (quick), `--rescan-ml` after changing models, `--prune` to forget deleted files. |
+| `scan ROOT…` | Analyse photos and cache the results in `~/.phototag`. `--limit N` for a trial, `--no-ml` for EXIF/colour only (quick), `--rescan-ml` after changing models, `--retry-errors` to try unreadable photos again, `--prune` to forget deleted files. |
 | `tag` | Apply `tags.toml` to the cache and print counts per tag. Fast; re-run after any config change. |
 | `review TAG` | Contact sheet of photos ranked by score, with a red line at the threshold. Without a tag: list all tags and counts. |
 | `explain FILE` | Every EXIF value, statistic, detection and scene score for one photo. Useful for "why was this tagged Night?" |
@@ -194,14 +196,14 @@ until its own rules for that photo change.
 
 ## First run and troubleshooting
 
-**Testing status.** The EXIF tags, colour and B&W/sepia detection, RAW preview
-handling (Canon and Nikon samples) and sidecar writing were tested: originals
-stayed byte-for-byte unchanged, and existing keywords were kept. The two AI models
-(YOLO detection and SigLIP scene scoring) could not be downloaded in the
-environment where this was written, so they were tested with stand-ins. Your
-first `scan --limit 300` is the real test of those two parts.
+**Testing status.** Every step has been run on a real library of a few
+thousand photos on an Apple Silicon Mac, including both AI models (YOLO
+detection and SigLIP scene scoring, on the Apple GPU) and writing sidecars that
+digiKam reads. Originals stayed byte-for-byte unchanged, and existing keywords
+were kept. Stopping and resuming, unreadable files, read-only folders and
+existing sidecars with hand-added tags were also tested on a separate sample.
 
-What to watch for on that first run:
+What to watch for on a first run:
 
 - **Model download.** The first scan pauses while about 1 GB of models
   downloads. If it fails, check your internet connection and re-run; the
@@ -209,8 +211,9 @@ What to watch for on that first run:
 - **"Couldn't load ViT-B-16-SigLIP2-256 … falling back".** Your open_clip version
   doesn't have the newer model. The fallback works fine; to silence the message,
   set `clip = "ViT-B-16-SigLIP"` in `tags.toml`.
-- **"YOLO failed on mps … switching to cpu".** A rare Apple GPU problem in
-  Ultralytics. Detection still works, just slower.
+- **"YOLO failed on mps … switching to cpu"** (or "SigLIP failed …"). A rare
+  Apple GPU problem, such as running out of GPU memory. Scanning carries on,
+  just slower.
 - **Scene tags look wrong or fire on everything.** That means the thresholds
   need tuning (see above), not that something is broken. Use `explain FILE` to
   see a photo's scores.
@@ -222,6 +225,25 @@ What to watch for on that first run:
   online for a newer model version, run with `HF_HUB_OFFLINE=0 python phototag.py …`.
 - **Permission errors when writing.** The drive is read-only (see the NTFS note
   above).
+
+### Long runs
+
+- **Stopping is safe at any point.** Stop, Ctrl-C, closing the window or the
+  Terminal window it opened, or the drive disconnecting: Scan keeps every batch
+  it finished (16 photos), Write keeps every sidecar it wrote, and running the
+  same step again continues from there. Tag either finishes or leaves the
+  previous tags as they were.
+- **Your Mac stays awake** while Scan or Write runs (the screen can still turn
+  off), so the drive isn't disconnected by sleep.
+- **Photos that can't be read** are listed as they come up and counted at the
+  end; the rest carry on. Try them again with `--retry-errors`.
+- **Write stops by itself after 20 failures in a row** (usually a read-only
+  or disconnected drive) instead of failing every remaining photo.
+- **Photo library packages are skipped:** Apple Photos, iPhoto and Aperture
+  libraries, and Lightroom's previews. phototag never looks inside them or writes
+  sidecars there. Scan names each one it skips.
+- **Disk space:** thumbnails take about 15 KB per photo in `~/.phototag`, about
+  1.5 GB per 100,000 photos.
 
 If something else breaks, the full error text is what's needed to fix it.
 
@@ -235,6 +257,9 @@ If something else breaks, the full error text is what's needed to fix it.
   elsewhere, e.g. `~/code-ai/scripts/python/phototag/cache`.
 - **`~/.cache/huggingface`:** the SigLIP scene model.
 - **`~/Library/Application Support/Ultralytics`:** a small settings file.
+- **`~/.phototag/backup`:** the first time `write` changes a sidecar that
+  already existed (one digiKam wrote, say), a copy of the original goes here,
+  under its full path. Sidecars phototag created itself aren't copied.
 - **`~/.phototag/gui.json`:** the window's last folder, tag and High contrast setting.
 
 ## Notes and limits

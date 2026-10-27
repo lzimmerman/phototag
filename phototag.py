@@ -24,6 +24,8 @@ import io
 import json
 import math
 import os
+import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -58,6 +60,10 @@ RASTER_EXTS = {".jpg", ".jpeg", ".tif", ".tiff", ".png", ".webp"} | (
 )
 BROWSER_VIEWABLE = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 SKIP_DIRS = {".dtrash", "@eaDir", "#recycle", "$RECYCLE.BIN", "System Volume Information"}
+# library packages (Apple Photos, iPhoto, Aperture, Lightroom): their internal copies
+# and previews aren't photos to tag, and sidecars don't belong inside them
+SKIP_SUFFIXES = (".photoslibrary", ".photolibrary", ".migratedphotolibrary", ".aplibrary",
+                 ".lrdata", ".lrlibrary")
 
 META_TAGS = [
     "-Make", "-Model", "-LensID", "-LensModel", "-Lens",
@@ -73,6 +79,12 @@ DEFAULT_CACHE = Path(os.environ.get("PHOTOTAG_CACHE", Path.home() / ".phototag")
 
 def log(*a):
     print(*a, file=sys.stderr, flush=True)
+
+
+def keep_awake():
+    """Stop the Mac idle-sleeping (and the drive disconnecting) until this process exits."""
+    if sys.platform == "darwin" and shutil.which("caffeinate"):
+        subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())])
 
 
 def time_left(seconds: float) -> str:
@@ -105,6 +117,7 @@ class ExifTool:
             self.proc = subprocess.Popen(
                 [exe, "-stay_open", "True", "-@", "-"],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True,  # Ctrl-C stops phototag between files, never exiftool mid-write
             )
         except FileNotFoundError:
             sys.exit("exiftool not found. Install it with:  brew install exiftool")
@@ -349,11 +362,19 @@ class Clip:
         log(f"SigLIP {self.id} on {self.device}")
 
     def images(self, ims: list[Image.Image]) -> np.ndarray:
-        with self.torch.no_grad():
-            x = self.torch.stack([self.prep(im) for im in ims]).to(self.device)
-            f = self.model.encode_image(x)
-            f = f / f.norm(dim=-1, keepdim=True)
-        return f.float().cpu().numpy()
+        try:
+            with self.torch.no_grad():
+                x = self.torch.stack([self.prep(im) for im in ims]).to(self.device)
+                f = self.model.encode_image(x)
+                f = f / f.norm(dim=-1, keepdim=True)
+            return f.float().cpu().numpy()
+        except Exception as e:
+            if self.device == "cpu":
+                raise
+            log(f"SigLIP failed on {self.device} ({e}); switching to cpu")
+            self.device = "cpu"
+            self.model = self.model.to("cpu")
+            return self.images(ims)
 
     def texts(self, prompts: list[str]) -> np.ndarray:
         with self.torch.no_grad():
@@ -364,7 +385,14 @@ class Clip:
 
 class Detector:
     def __init__(self, cfg: dict, cache: Path):
+        # Ultralytics otherwise pip-installs packages mid-run: its replacement for
+        # Image.open installs a HEIC plugin whenever a corrupt file can't be opened.
+        # pillow-heif already covers HEIC, and the detector is given opened images,
+        # so put Pillow's own Image.open back.
+        os.environ.setdefault("YOLO_AUTOINSTALL", "false")
         from ultralytics import YOLO
+        from ultralytics.utils import patches
+        Image.open = getattr(patches, "_image_open", Image.open)
 
         m = cfg.get("models", {})
         weights = m.get("yolo", "yolo11s.pt")
@@ -402,7 +430,11 @@ def iter_photos(roots: list[Path]):
             yield root
             continue
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS)
+            for d in dirnames:
+                if d.lower().endswith(SKIP_SUFFIXES):
+                    log(f"Skipping library package: {Path(dirpath) / d}")
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS
+                                 and not d.lower().endswith(SKIP_SUFFIXES))
             for fn in sorted(filenames):
                 if fn.startswith("."):  # includes macOS "._" files on exFAT drives
                     continue
@@ -427,7 +459,11 @@ def cmd_scan(args, cfg):
     for p in iter_photos(roots):
         sp = str(p)
         seen.add(sp)
-        st = p.stat()
+        try:
+            st = p.stat()
+        except OSError as e:
+            log(f"  ! {p}: {e}")
+            continue
         k = known.get(sp)
         changed = k is None or k["size"] != st.st_size or abs(k["mtime"] - st.st_mtime) > 1
         needs_ml = use_ml and k is not None and not k["error"] and (args.rescan_ml or not (k["has_emb"] and k["has_dets"]))
@@ -446,13 +482,14 @@ def cmd_scan(args, cfg):
     if not todo:
         return
 
+    keep_awake()
     et = ExifTool()
     if use_ml:
         log("Loading the image models (the first time this downloads them)...")
     clip = Clip(cfg) if use_ml else None
     det = Detector(cfg, args.cache) if use_ml else None
     pool = ThreadPoolExecutor(max_workers=4)
-    t0, done = time.time(), 0
+    t0, done, failed, stopped = time.time(), 0, 0, False
     try:
         for i in range(0, len(todo), args.batch):
             batch = todo[i: i + args.batch]
@@ -489,8 +526,18 @@ def cmd_scan(args, cfg):
             dets = det([r[2] for r in good]) if (det and good) else None
             gi = 0
             for p, meta, im, stats, thumb, err in results:
-                st = p.stat()
+                try:
+                    st = p.stat()
+                except OSError as e:  # gone since listing: leave it for the next scan
+                    if not all(r.exists() for r in roots):
+                        raise SystemExit("\nThe photos folder has gone: is the drive still connected? "
+                                         "Progress so far is saved; run the same command to continue.")
+                    log(f"\n  ! {p}: {e}")
+                    if im is not None:
+                        gi += 1
+                    continue
                 if err:
+                    failed += 1
                     log(f"\n  ! {p}: {err}")
                     row = (str(p), st.st_size, st.st_mtime, kind(p), json.dumps(meta), None, None, None, None, None, err, time.time())
                 else:
@@ -504,10 +551,16 @@ def cmd_scan(args, cfg):
             done += len(batch)
             print(f"\r{progress_line(done, len(todo), time.time() - t0, 'photos')}   ", end="", file=sys.stderr, flush=True)
     except KeyboardInterrupt:
+        stopped = True
         log("\nStopped; progress so far is saved. Run the same command to continue.")
     finally:
+        db.commit()  # rows already stored from a batch cut short (e.g. the drive went away)
         et.close()
-    log(f"\nDone. Next: python {Path(__file__).name} tag")
+    if failed:
+        log(f"\n{failed} photo{'s' if failed > 1 else ''} couldn't be read (listed above). "
+            "To try them again, run scan with --retry-errors.")
+    if not stopped:
+        log(f"\nDone. Next: python {Path(__file__).name} tag")
 
 
 def kind(p: Path) -> str:
@@ -844,10 +897,19 @@ def _pending(db, cfg, under: Path | None, remove=False):
             yield r["path"], want, had or []
 
 
+def backup_sidecar(sc: Path, cache: Path):
+    """Keep a copy of a sidecar phototag hasn't touched before, under cache/backup/<its full path>."""
+    dest = cache / "backup" / sc.relative_to(sc.anchor)
+    if not dest.exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(sc, dest)
+
+
 def write_one(et: ExifTool, src: Path, want: list[str], cfg) -> tuple[Path, str]:
     root = cfg["root"]
     sc = sidecar_for(src, cfg)
     exists = sc.exists()
+    et.errors.clear()  # so a failure reports this file's errors, not an earlier one's
     d = (et.json("-XMP-lr:HierarchicalSubject", "-XMP-digiKam:TagsList", "-XMP-dc:Subject", str(sc if exists else src)) or [{}])[0]
     hier: list[str] = []
     for h in _listify(d.get("HierarchicalSubject")) + [t.replace("/", "|") for t in _listify(d.get("TagsList"))]:
@@ -872,7 +934,7 @@ def write_one(et: ExifTool, src: Path, want: list[str], cfg) -> tuple[Path, str]
         out = et.run("-o", str(sc), *assign, str(src)).decode("utf-8", "replace")
         ok = "created" in out
     if not ok:
-        err = "; ".join(et.errors[-3:]) or out.strip()
+        err = "; ".join(et.errors) or out.strip()
         raise RuntimeError(err)
     return sc, "updated" if exists else "created"
 
@@ -895,8 +957,11 @@ def cmd_write(args, cfg):
             print(f"... and {len(todo) - 50} more")
         print(f"\n{len(todo)} sidecars would be written. Run without --dry-run to write them.")
         return
+    keep_awake()
     et = ExifTool()
+    touched = {r[0] for r in db.execute("SELECT path FROM written")}  # their originals are backed up already
     stats = {"created": 0, "updated": 0, "missing": 0, "failed": 0}
+    in_a_row = 0  # failures since the last success
     total, t0, last = len(todo), time.time(), 0.0
 
     def progress(i: int, final=False):
@@ -916,21 +981,33 @@ def cmd_write(args, cfg):
             src = Path(path)
             if not src.exists():
                 stats["missing"] += 1
+                in_a_row += 1
             else:
                 try:
+                    sc = sidecar_for(src, cfg)
+                    if path not in touched and sc.exists():
+                        backup_sidecar(sc, args.cache)
                     sc, what = write_one(et, src, want, cfg)
                     stats[what] += 1
+                    in_a_row = 0
                     if args.remove:
                         db.execute("DELETE FROM written WHERE path=?", (path,))
                     else:
                         db.execute("INSERT OR REPLACE INTO written VALUES (?,?,?,?)", (path, json.dumps(want), str(sc), time.time()))
+                    db.commit()  # record each sidecar as soon as it's written
                 except Exception as e:
                     stats["failed"] += 1
+                    in_a_row += 1
                     log(f"\n  ! {path}: {e}")
-            if i % 50 == 0:
-                db.commit()
             progress(i)
-        progress(i, final=True)
+            if et.proc.poll() is not None or in_a_row >= 20:
+                progress(i, final=True)
+                why = ("exiftool stopped unexpectedly" if et.proc.poll() is not None else
+                       f"the last {in_a_row} photos all failed: is the drive connected and writable?")
+                log(f"\nStopped: {why}\nSidecars written so far are saved; fix that and run the same command to continue.")
+                break
+        else:
+            progress(i, final=True)
     except KeyboardInterrupt:
         progress(i, final=True)
         log("\nStopped. Sidecars written so far are saved; run the same command to continue.")
@@ -1065,6 +1142,10 @@ def cmd_explain(args, cfg):
 # ------------------------------------------------------------------- main ---
 
 
+def _interrupt(*_):
+    raise KeyboardInterrupt
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", type=Path, default=SCRIPT_DIR / "tags.toml")
@@ -1100,6 +1181,9 @@ def main():
 
     args = ap.parse_args()
     args.cache = args.cache.expanduser()
+    # closing the Terminal window or being killed stops cleanly, like Ctrl-C, so progress is saved
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, _interrupt)
     cfg = load_config(args.config)
     {"scan": cmd_scan, "tag": cmd_tag, "write": cmd_write, "review": cmd_review, "explain": cmd_explain}[args.cmd](args, cfg)
 
