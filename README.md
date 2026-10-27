@@ -18,7 +18,7 @@ All tags go under one top-level tag, `Auto`, so they stay separate from your own
 | Exposure | Long exposure, High ISO, Flash | EXIF |
 | Place | Country › Region › City | GPS, offline lookup |
 | People | One, Two, Group, Portrait, Small figures | YOLO detector |
-| Animals | Dog, Cat, Bird, Wild animals › Coyote, Squirrel…, Insects… | YOLO detector finds the animal; the SigLIP image model names it |
+| Animals | Dog, Cat, Bird › Cardinal, Hawk, Egret…, Wild animals › Coyote, Squirrel…, Insects… | YOLO detector finds the animal; the SigLIP image model names it |
 | Vehicles | Car, Boat… | YOLO detector |
 | Scene, Subject, Style | Landscape, Mountains, Night, Food, Macro, Silhouette… | SigLIP image model |
 | Astro | Moon, Night sky, Aurora, Lunar eclipse | SigLIP image model |
@@ -204,22 +204,38 @@ run `tag` (no re-scan needed) and check it with `review`:
 [animals.species]
 "a coyote" = "Animals|Wild animals|Coyote"     # already in the list
 "an opossum" = "Animals|Wild animals|Opossum"
-"a great blue heron" = "Animals|Bird|Heron"
-"a red-tailed hawk" = "Animals|Bird|Hawk"
 "a monarch butterfly" = "Animals|Insects|Butterfly|Monarch"
 "a drawing or sign of an animal" = ""         # "" = no tag at all
 ```
 
-- Describe it the way you'd caption a photo of it: `"a great blue heron"`, not
-  just `"heron"`.
-- Each photo gets only the single best match. A heron fits both `"a great blue
-  heron"` and `"a bird"`, so the two share the confidence; if neither reaches
-  `min_confidence`, the detector's tag (Bird) stays. After adding entries, check
-  them with `review` (e.g. `review "Animals|Bird"`), and keep the general
-  entries as a fallback.
+- Describe it the way you'd caption a photo of it: `"an opossum"`, not just
+  `"opossum"`.
+- Each photo gets only the single best match. Similar entries share the
+  confidence between them; if none reaches `min_confidence`, the detector's tag
+  stays. Keep the general entries (`"a bird"`) as a fallback.
 - `min_confidence = 0.8` is a balance. On a test library, lowering it to 0.7
   caught one more coyote but also tagged dandelions as insects. Raise it if you
   see wrong animals; lower it if too many keep the detector's guess.
+
+**Birds** get a second step. A photo tagged *Bird* is matched against
+`[birds.species]`, about 45 common North American and coastal birds, and gets
+e.g. *Animals › Bird › Cardinal* when the scene model is at least 80% sure. If
+not, it stays plain *Bird*. Add your own the same way:
+
+```toml
+[birds.species]
+"a great blue heron" = "Animals|Bird|Heron"      # already in the list
+"a red-tailed hawk" = "Animals|Bird|Hawk|Red-tailed hawk"
+"a snowy owl" = "Animals|Bird|Owl|Snowy owl"
+"a raven" = "Animals|Bird|Crow"                   # several can share one tag
+```
+
+Entries that share a tag pool their confidence, so a black bird that's half
+crow and half raven still counts as a confident *Crow*. On a test library of
+about 1,200 bird photos, roughly 60% got a species. Most were right, but the
+model can't really tell a crow from a raven or one small shorebird from
+another, and it calls a young night heron a shorebird. Distant, backlit or
+dark birds mostly stay plain *Bird*. Check with `review "Animals|Bird"`.
 
 ### Fixing a single photo by hand
 

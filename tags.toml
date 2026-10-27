@@ -89,6 +89,67 @@ min_confidence = 0.8
 "a frog" = "Animals|Frog"
 "a drawing or sign of an animal" = ""
 
+[birds]
+# Which bird, for photos tagged "Animals|Bird" (by the detector or the list
+# above): the scene model picks the closest match here, if it's at least
+# min_confidence sure; otherwise the photo just keeps "Animals|Bird". Several
+# descriptions can share a tag (crow and raven, sandpiper and plover).
+# Checked on a library of mostly New Jersey birds; distant or dark birds are often
+# misread, so check new entries with `review "Animals|Bird"`.
+enabled = true
+min_confidence = 0.8
+
+[birds.species]
+"an American crow" = "Animals|Bird|Crow"
+"a raven" = "Animals|Bird|Crow"
+"a common grackle" = "Animals|Bird|Grackle"
+"a red-winged blackbird" = "Animals|Bird|Red-winged blackbird"
+"a European starling" = "Animals|Bird|Starling"
+"a northern cardinal" = "Animals|Bird|Cardinal"
+"a blue jay" = "Animals|Bird|Blue jay"
+"an American robin" = "Animals|Bird|Robin"
+"an American goldfinch" = "Animals|Bird|Goldfinch"
+"a house finch" = "Animals|Bird|House finch"
+"a black-capped chickadee" = "Animals|Bird|Chickadee"
+"a tufted titmouse" = "Animals|Bird|Titmouse"
+"a nuthatch" = "Animals|Bird|Nuthatch"
+"a dark-eyed junco" = "Animals|Bird|Junco"
+"a sparrow" = "Animals|Bird|Sparrow"
+"a wren" = "Animals|Bird|Wren"
+"a warbler" = "Animals|Bird|Warbler"
+"a mockingbird" = "Animals|Bird|Mockingbird"
+"a catbird" = "Animals|Bird|Catbird"
+"a cedar waxwing" = "Animals|Bird|Cedar waxwing"
+"a woodpecker" = "Animals|Bird|Woodpecker"
+"a hummingbird" = "Animals|Bird|Hummingbird"
+"a mourning dove" = "Animals|Bird|Mourning dove"
+"a pigeon" = "Animals|Bird|Pigeon"
+"a kingfisher" = "Animals|Bird|Kingfisher"
+"a hawk" = "Animals|Bird|Hawk"
+"an osprey" = "Animals|Bird|Osprey"
+"a bald eagle" = "Animals|Bird|Eagle"
+"a turkey vulture" = "Animals|Bird|Vulture"
+"an owl" = "Animals|Bird|Owl"
+"a seagull" = "Animals|Bird|Gull"
+"a tern" = "Animals|Bird|Tern"
+"a great blue heron" = "Animals|Bird|Heron"
+"a black-crowned night heron" = "Animals|Bird|Night heron"
+"a white egret" = "Animals|Bird|Egret"
+"a cormorant" = "Animals|Bird|Cormorant"
+"a pelican" = "Animals|Bird|Pelican"
+"a loon" = "Animals|Bird|Loon"
+"a northern gannet" = "Animals|Bird|Gannet"
+"an Atlantic puffin" = "Animals|Bird|Puffin"
+"a sandpiper" = "Animals|Bird|Shorebird"
+"a plover" = "Animals|Bird|Shorebird"
+"an oystercatcher" = "Animals|Bird|Oystercatcher"
+"a Canada goose" = "Animals|Bird|Canada goose"
+"a swan" = "Animals|Bird|Swan"
+"a mallard duck" = "Animals|Bird|Duck"
+"a duck" = "Animals|Bird|Duck"
+"a wild turkey" = "Animals|Bird|Wild turkey"
+"a chicken" = "Animals|Farm animals|Chicken"
+
 [light]
 enabled = true
 low_key_max = 0.22         # mean brightness (0-1) at or below => Low key

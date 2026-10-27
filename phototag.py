@@ -792,18 +792,19 @@ def species_prompt(name: str) -> str:
 
 
 def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
-    """Prompt embeddings for the scene tags and the [animals] species list, cached so
-    `tag` rarely needs the model."""
+    """Prompt embeddings for the scene tags and the [animals] and [birds] species
+    lists, cached so `tag` rarely needs the model."""
     scenes = cfg.get("scene", []) if cfg.get("scenes", {}).get("enabled", True) else []
-    an = cfg.get("animals", {})
-    species = an.get("species", {}) if an.get("enabled", True) else {}
-    if not (scenes or species) or not model_ids:
+    lists = {k: cfg.get(k, {}) for k in ("animals", "birds")}
+    lists = {k: c for k, c in lists.items() if c.get("enabled", True) and c.get("species")}
+    if not (scenes or lists) or not model_ids:
         return None
     if len(model_ids) > 1:
         log(f"Photos were embedded with several models {sorted(model_ids)}; "
             "run `scan ROOT --rescan-ml` so they match. Using the most common one.")
     mid = db.execute("SELECT emb_model, COUNT(*) c FROM photos WHERE emb_model IS NOT NULL GROUP BY 1 ORDER BY c DESC").fetchone()[0]
-    prompts = sorted({p for s in scenes for p in s["prompts"]} | {species_prompt(n) for n in species})
+    prompts = sorted({p for s in scenes for p in s["prompts"]}
+                     | {species_prompt(n) for c in lists.values() for n in c["species"]})
     have = {r["prompt"]: np.frombuffer(r["emb"], dtype=np.float32)
             for r in db.execute("SELECT prompt, emb FROM textcache WHERE model=?", (mid,))}
     kv = db.execute("SELECT v FROM kv WHERE k=?", (f"logit:{mid}",)).fetchone()
@@ -829,22 +830,26 @@ def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
         names.append(s["tag"])
         ths.append(s.get("threshold", default))
     out = {"model": mid, "scale": scale, "bias": bias, "names": names, "ths": np.array(ths),
-           "mat": np.stack(mats) if mats else None, "species": None}
-    if species:
-        out["species"] = (list(species.values()),
-                          np.stack([have[species_prompt(n)] for n in species]),
-                          an.get("min_confidence", 0.8))
+           "mat": np.stack(mats) if mats else None}
+    for k in ("animals", "birds"):
+        c = lists.get(k)
+        out[k] = (list(c["species"].values()), np.stack([have[species_prompt(n)] for n in c["species"]]),
+                  c.get("min_confidence", 0.8)) if c else None
     return out
 
 
-def which_animal(emb: np.ndarray, sv: dict) -> tuple[str, float] | None:
-    """The [animals] species tag the scene model is confident about, or None if unsure."""
-    tags, mat, min_conf = sv["species"]
+def which_animal(emb: np.ndarray, sv: dict, key="animals") -> tuple[str, float] | None:
+    """The tag from the [animals] (or [birds]) list that the scene model is confident
+    about, or None if unsure."""
+    tags, mat, min_conf = sv[key]
     logits = sv["scale"] * (mat @ emb)
     pr = np.exp(logits - logits.max())
     pr /= pr.sum()
-    best = int(pr.argmax())
-    return (tags[best], float(pr[best])) if pr[best] >= min_conf else None
+    by_tag: dict[str, float] = {}
+    for t, q in zip(tags, pr):  # descriptions sharing a tag (crow, raven) pool their confidence
+        by_tag[t] = by_tag.get(t, 0.0) + float(q)
+    best = max(by_tag, key=by_tag.get)
+    return (best, by_tag[best]) if by_tag[best] >= min_conf else None
 
 
 def geocode(rows, cfg) -> dict[str, dict]:
@@ -903,10 +908,15 @@ def cmd_tag(args, cfg):
                         tags.append(n)
             # the detector found an animal, but only knows ten kinds: let the scene
             # model say which, when it's sure ("" in the list means no tag)
-            if sv["species"] and animal_tags & set(found) and (pick := which_animal(emb, sv)):
+            if sv["animals"] and animal_tags & set(found) and (pick := which_animal(emb, sv)):
                 found = [t for t in found if t not in animal_tags] + ([pick[0]] if pick[0] else [])
                 if pick[0]:
                     scores[pick[0]] = round(pick[1], 4)
+            # then which bird, for photos tagged Bird
+            bird = cfg.get("birds", {}).get("tag", "Animals|Bird")
+            if sv["birds"] and bird in found and (pick := which_animal(emb, sv, "birds")):
+                found = [t for t in found if t != bird] + ([pick[0]] if pick[0] else [bird])
+                scores[pick[0] or bird] = round(pick[1], 4)
         tags += found
         tags = sorted(set(tags))
         for t in tags:
