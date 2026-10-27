@@ -101,6 +101,11 @@ environment active. If macOS refuses to open `phototag.command`, run
 - **Stop** works like Ctrl-C: progress so far is saved.
 - **Quit** (or Cmd-Q, or closing the window) asks first if a step is still
   running, then stops it the same way.
+- **Rescan everything** (next to Scan) reads every photo in the folder again
+  instead of skipping ones already scanned, like `scan --rescan`. Use it on a
+  folder of older scans so new checks (such as the film negative rules) can
+  judge them. It takes as long as the first scan, so pick the smallest folder
+  that covers them.
 - **Retry unreadable photos** (next to Scan) tries the photos an earlier scan
   couldn't read again, e.g. after reconnecting a drive or repairing files.
 - Under the progress bar, Scan and Write show how far they've got, the
@@ -123,7 +128,7 @@ new or changed files.
 
 | Command | What it does |
 |---|---|
-| `scan ROOT…` | Analyse photos and cache the results in `~/.phototag`. `--limit N` for a trial, `--no-ml` for EXIF/colour only (quick), `--rescan-ml` after changing models, `--retry-errors` to try unreadable photos again, `--prune` to forget deleted files. |
+| `scan ROOT…` | Analyse photos and cache the results in `~/.phototag`. `--limit N` for a trial, `--no-ml` for EXIF/colour only (quick), `--rescan` to read everything again, `--rescan-ml` after changing models, `--retry-errors` to try unreadable photos again, `--prune` to forget deleted files. |
 | `tag` | Apply `tags.toml` to the cache and print counts per tag. Fast; re-run after any config change. |
 | `review TAG` | Contact sheet of photos ranked by score, with a red line at the threshold. Without a tag: list all tags and counts. |
 | `explain FILE` | Every EXIF value, statistic, detection and scene score for one photo. Useful for "why was this tagged Night?" |

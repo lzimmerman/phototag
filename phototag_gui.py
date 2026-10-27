@@ -42,7 +42,8 @@ STEPS = {
 
 
 def build_command(step: str, folder: str = "", limit: int | None = None, no_ml=False,
-                  tag: str = "", dry_run=False, only_folder=False, retry=False, open_page=True) -> list[str]:
+                  tag: str = "", dry_run=False, only_folder=False, retry=False, open_page=True,
+                  rescan=False) -> list[str]:
     cmd = [sys.executable, "-u", str(SCRIPT), step]
     if step == "scan":
         cmd.append(folder)
@@ -52,6 +53,8 @@ def build_command(step: str, folder: str = "", limit: int | None = None, no_ml=F
             cmd.append("--no-ml")
         if retry:
             cmd.append("--retry-errors")
+        if rescan:
+            cmd.append("--rescan")
     elif step == "review":
         cmd.append(tag)
     elif step == "write":
@@ -257,6 +260,8 @@ def main():
     ttk.Checkbutton(o, text="EXIF and colour only (quick)", variable=no_ml).pack(side="left")
     retry = tk.BooleanVar(value=False)
     ttk.Checkbutton(o, text="Retry unreadable photos", variable=retry).pack(side="left", padx=(14, 0))
+    rescan = tk.BooleanVar(value=False)
+    ttk.Checkbutton(o, text="Rescan everything", variable=rescan).pack(side="left", padx=(14, 0))
 
     step_row(1, "tag", "2. Tag")
 
@@ -383,7 +388,8 @@ def main():
         except ValueError:
             n = None
         cmd = build_command(step, str(Path(f).expanduser()) if f else "", n, no_ml.get(),
-                            tag.get().strip(), dry.get(), only_folder.get(), retry.get(), open_page.get())
+                            tag.get().strip(), dry.get(), only_folder.get(), retry.get(), open_page.get(),
+                            rescan.get())
         remember()
         write_log(f"\n$ phototag {' '.join(cmd[3:])}")
         notes[step].configure(text="Running…", foreground="")
