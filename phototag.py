@@ -33,6 +33,7 @@ import threading
 import time
 import tomllib
 import webbrowser
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -243,29 +244,26 @@ def decode_b64(v) -> bytes | None:
     return None
 
 
-def raw_previews(et: ExifTool, paths: list[Path]) -> dict[str, bytes]:
-    """Embedded JPEG previews from RAW files (much faster than developing the RAW)."""
-    out: dict[str, bytes] = {}
-    if not paths:
-        return out
-    small = set()
-    for d in et.json("-b", "-PreviewImage", *map(str, paths)):
-        data = decode_b64(d.get("PreviewImage"))
-        if data:
-            out[d["SourceFile"]] = data
-            if _jpeg_side(data) < 1000:  # some cameras only embed a small preview here
-                small.add(d["SourceFile"])
-    retry = [p for p in paths if str(p) not in out or str(p) in small]
-    if retry:
-        for d in et.json("-b", "-JpgFromRaw", "-OtherImage", "-ThumbnailImage", *map(str, retry)):
-            best = out.get(d["SourceFile"])
-            for k in ("JpgFromRaw", "OtherImage", "ThumbnailImage"):
-                data = decode_b64(d.get(k))
-                if data and _jpeg_side(data) > (_jpeg_side(best) if best else 0):
-                    best = data
-            if best:
-                out[d["SourceFile"]] = best
-    return out
+PREVIEW_TAGS = ("PreviewImage", "OtherImage")       # small to medium: usually one is 1000px+
+FALLBACK_PREVIEWS = ("JpgFromRaw", "ThumbnailImage")  # full-size (slow to extract) or tiny
+
+
+def read_photo(et: ExifTool, p: Path) -> tuple[dict, bytes | None]:
+    """EXIF for one photo and, for a RAW, its embedded JPEG preview, in as few reads as possible.
+
+    Scan works at 1024px, so the smallest preview at least 1000px wide is best: Nikon's
+    1620px OtherImage, say, rather than the full-size JpgFromRaw.
+    """
+    if p.suffix.lower() not in RAW_EXTS:
+        return (et.json(*META_TAGS, str(p)) or [{}])[0], None
+    d = (et.json(*META_TAGS, "-b", *(f"-{t}" for t in PREVIEW_TAGS), str(p)) or [{}])[0]
+    found = [b for t in PREVIEW_TAGS if (b := decode_b64(d.pop(t, None)))]
+    big = [b for b in found if _jpeg_side(b) >= 1000]
+    if big:
+        return d, min(big, key=_jpeg_side)
+    more = (et.json("-b", *(f"-{t}" for t in FALLBACK_PREVIEWS), str(p)) or [{}])[0]
+    found += [b for t in FALLBACK_PREVIEWS if (b := decode_b64(more.get(t)))]
+    return d, max(found, key=_jpeg_side, default=None)
 
 
 def _jpeg_side(data: bytes) -> int:
@@ -482,45 +480,58 @@ def cmd_scan(args, cfg):
     if not todo:
         return
 
+    if not shutil.which("exiftool"):
+        sys.exit("exiftool not found. Install it with:  brew install exiftool")
     keep_awake()
-    et = ExifTool()
     if use_ml:
         log("Loading the image models (the first time this downloads them)...")
     clip = Clip(cfg) if use_ml else None
     det = Detector(cfg, args.cache) if use_ml else None
+    exiftools, local = [], threading.local()
+
+    def prepare(p: Path):
+        """Read, decode and thumbnail one photo, on a worker thread with its own exiftool."""
+        if not hasattr(local, "et"):
+            local.et = ExifTool()
+            exiftools.append(local.et)
+        meta = {}
+        try:
+            meta, preview = read_photo(local.et, p)
+            if p.suffix.lower() in RAW_EXTS:
+                if preview:
+                    im = open_oriented(io.BytesIO(preview), meta.get("Orientation"))
+                else:
+                    im = develop_raw(p)  # rawpy applies the orientation itself
+                    if im is None:
+                        raise ValueError("no embedded preview (pip install rawpy to develop it instead)")
+                    im = to_rgb(im)
+                    im.thumbnail((1024, 1024))
+            else:
+                im = open_oriented(p)
+            stats = image_stats(im)
+            thumb = hashlib.sha1(str(p).encode()).hexdigest()[:16] + ".jpg"
+            t = im.copy()
+            t.thumbnail((360, 360))
+            t.save(args.cache / "thumbs" / thumb, quality=82)
+            return p, meta, im, stats, thumb, None
+        except Exception as e:
+            return p, meta, None, None, None, f"{type(e).__name__}: {e}"
+
+    # Four workers read and decode photos (the drive copes well with several reads at
+    # once) while the models work through the previous batch on the GPU.
     pool = ThreadPoolExecutor(max_workers=4)
+    queued, upcoming = deque(), iter(todo)
+
+    def top_up():  # keep the workers up to two batches ahead, so memory stays flat
+        while len(queued) < 3 * args.batch and (p := next(upcoming, None)):
+            queued.append(pool.submit(prepare, p))
+
     t0, done, failed, stopped = time.time(), 0, 0, False
     try:
-        for i in range(0, len(todo), args.batch):
-            batch = todo[i: i + args.batch]
-            metas = {d["SourceFile"]: d for d in et.json(*META_TAGS, *map(str, batch))}
-            previews = raw_previews(et, [p for p in batch if p.suffix.lower() in RAW_EXTS])
-
-            def load(p: Path):
-                meta = metas.get(str(p), {})
-                try:
-                    if p.suffix.lower() in RAW_EXTS:
-                        data = previews.get(str(p))
-                        if data:
-                            im = open_oriented(io.BytesIO(data), meta.get("Orientation"))
-                        else:
-                            im = develop_raw(p)  # rawpy applies the orientation itself
-                            if im is None:
-                                raise ValueError("no embedded preview (pip install rawpy to develop it instead)")
-                            im = to_rgb(im)
-                            im.thumbnail((1024, 1024))
-                    else:
-                        im = open_oriented(p)
-                    stats = image_stats(im)
-                    thumb = hashlib.sha1(str(p).encode()).hexdigest()[:16] + ".jpg"
-                    t = im.copy()
-                    t.thumbnail((360, 360))
-                    t.save(args.cache / "thumbs" / thumb, quality=82)
-                    return p, meta, im, stats, thumb, None
-                except Exception as e:
-                    return p, meta, None, None, None, f"{type(e).__name__}: {e}"
-
-            results = list(pool.map(load, batch))
+        top_up()
+        while queued:
+            results = [queued.popleft().result() for _ in range(min(args.batch, len(queued)))]
+            top_up()
             good = [r for r in results if r[2] is not None]
             embs = clip.images([r[2] for r in good]) if (clip and good) else None
             dets = det([r[2] for r in good]) if (det and good) else None
@@ -548,14 +559,16 @@ def cmd_scan(args, cfg):
                     gi += 1
                 db.execute("INSERT OR REPLACE INTO photos VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", row)
             db.commit()
-            done += len(batch)
+            done += len(results)
             print(f"\r{progress_line(done, len(todo), time.time() - t0, 'photos')}   ", end="", file=sys.stderr, flush=True)
     except KeyboardInterrupt:
         stopped = True
         log("\nStopped; progress so far is saved. Run the same command to continue.")
     finally:
+        pool.shutdown(wait=True, cancel_futures=True)  # finish the photos being read, drop the rest
         db.commit()  # rows already stored from a batch cut short (e.g. the drive went away)
-        et.close()
+        for e in exiftools:
+            e.close()
     if failed:
         log(f"\n{failed} photo{'s' if failed > 1 else ''} couldn't be read (listed above). "
             "To try them again, run scan with --retry-errors.")
@@ -1181,8 +1194,9 @@ def main():
 
     args = ap.parse_args()
     args.cache = args.cache.expanduser()
-    # closing the Terminal window or being killed stops cleanly, like Ctrl-C, so progress is saved
-    for sig in (signal.SIGTERM, signal.SIGHUP):
+    # closing the Terminal window or being killed stops cleanly, like Ctrl-C, so progress is saved;
+    # SIGINT too, in case it was inherited as ignored (as for `command &` in a script)
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, _interrupt)
     cfg = load_config(args.config)
     {"scan": cmd_scan, "tag": cmd_tag, "write": cmd_write, "review": cmd_review, "explain": cmd_explain}[args.cmd](args, cfg)

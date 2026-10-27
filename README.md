@@ -106,8 +106,10 @@ environment active. If macOS refuses to open `phototag.command`, run
 - The window remembers the last folder, tag and High contrast setting in
   `~/.phototag/gui.json`.
 
-On an M1 Pro, expect very roughly 5–15 photos per second, depending mostly on
-how fast the drive reads RAW files. Later scans only look at new or changed files.
+On an M1 Pro with photos on a USB drive, a mix of Nikon RAW and JPEG scans at
+about 5–6 photos per second, so roughly an hour per 20,000 photos. Large TIFF and
+PNG exports are slower, since every byte has to be read. Later scans only look at
+new or changed files.
 
 ### Commands
 
