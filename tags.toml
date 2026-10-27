@@ -39,6 +39,18 @@ bw_max_chroma = 7.0        # 99th-percentile spread below this => monochrome
 toned_min_tint = 3.0       # monochrome with an average tint above this => "Toned" (sepia, selenium...)
 toned_max_tint = 30.0      # stronger tints are single-colour subjects (blue sky), not toning
 
+[film]
+# Scanned colour negatives: the orange film base gives an even orange cast and no
+# true black (the darkest parts of the scene come out as orange base). The scene
+# tag "Film|Negative" below also finds black-and-white negatives and film strips;
+# this rule catches the orange ones it misses. Both give the same tag.
+enabled = true
+negative_hue = [115, 145]       # orange (tint_hue in `explain`)
+negative_min_tint = 20          # a strong overall cast...
+negative_max_spread = 32        # ...that is nearly one colour (sunsets and flowers vary far more)
+negative_max_dark = 0.15        # share of near-black pixels: rules out moons and silhouettes.
+                                # Saved by Scan from Oct 2026; older scans skip this rule until rescanned.
+
 [light]
 enabled = true
 low_key_max = 0.22         # mean brightness (0-1) at or below => Low key
@@ -199,3 +211,9 @@ prompts = ["a minimalist photograph", "a simple composition with lots of empty s
 [[scene]]
 tag = "Style|Aerial"
 prompts = ["an aerial photograph", "a view from an airplane window", "a drone shot looking down"]
+
+[[scene]]
+tag = "Film|Negative"
+prompts = ["a scanned color film negative", "an orange film negative with inverted colors",
+           "a photo of a color negative strip"]
+threshold = 0.1

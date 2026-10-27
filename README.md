@@ -20,6 +20,7 @@ All tags go under one top-level tag, `Auto`, so they stay separate from your own
 | People | One, Two, Group, Portrait, Small figures | YOLO detector |
 | Animals, Vehicles | Dog, Bird, Car, Boat… | YOLO detector |
 | Scene, Subject, Style | Landscape, Mountains, Night, Food, Macro, Silhouette… | SigLIP image model |
+| Film | Negative (scanned colour and B&W film negatives) | SigLIP image model, plus colour statistics for orange colour negatives |
 
 Everything is configured in `tags.toml`: add or remove scene tags (each is just a
 few descriptive phrases), change thresholds, turn groups off.
@@ -294,6 +295,13 @@ If something else breaks, the full error text is what's needed to fix it.
 - **`~/.phototag/gui.json`:** the window's last folder, tag and High contrast setting.
 
 ## Notes and limits
+
+- **Film|Negative** combines a scene tag (which finds black-and-white negatives
+  and film strips) with a colour rule for orange colour negatives, in `[film]` in
+  `tags.toml`. The colour rule needs a reading Scan saves from October 2026 on,
+  so for photos scanned earlier, run `scan FOLDER --rescan` once to include them.
+  On a test library about 97% of the photos it tagged were negatives; the misses
+  were a few warm sunset or silhouette shots and some positive slide scans.
 
 - **RAW files are judged by their embedded JPEG preview**: what the camera
   produced, not your Lightroom/Capture One edits. A RAW you converted to B&W in an

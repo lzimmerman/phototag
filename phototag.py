@@ -304,6 +304,7 @@ def image_stats(im: Image.Image) -> dict:
         "spread_p99": round(float(np.percentile(spread, 99)), 2),
         "brightness": round(float(y.mean()), 3),
         "sharpness": round(float(lap.var() * 1e4), 2),
+        "dark": round(float((y < 0.06).mean()), 3),  # share of near-black pixels
     }
 
 
@@ -731,6 +732,13 @@ def computed_tags(st: dict, cfg: dict) -> list[str]:
             out.append("Color|Black and white")
         elif st["tint"] <= c.get("toned_max_tint", 30.0):  # stronger = a single-colour subject, not toning
             out.append("Color|Toned")
+    fi = cfg.get("film", {})
+    if fi.get("enabled", True) and "dark" in st:  # older scans lack "dark": rescan to use this rule
+        lo, hi = fi.get("negative_hue", [115, 145])
+        if (lo <= st["tint_hue"] <= hi and st["tint"] >= fi.get("negative_min_tint", 20)
+                and st["spread_p99"] <= fi.get("negative_max_spread", 32)
+                and st["dark"] <= fi.get("negative_max_dark", 0.15)):
+            out.append("Film|Negative")
     li = cfg.get("light", {})
     if li.get("enabled", True):
         if st["brightness"] <= li.get("low_key_max", 0.22):
