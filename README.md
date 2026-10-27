@@ -20,6 +20,7 @@ All tags go under one top-level tag, `Auto`, so they stay separate from your own
 | People | One, Two, Group, Portrait, Small figures | YOLO detector |
 | Animals, Vehicles | Dog, Bird, Car, Boat… | YOLO detector |
 | Scene, Subject, Style | Landscape, Mountains, Night, Food, Macro, Silhouette… | SigLIP image model |
+| Astro | Moon, Night sky, Aurora, Lunar eclipse | SigLIP image model |
 | Film | Negative (scanned colour and B&W film negatives) | SigLIP image model, plus colour statistics for orange colour negatives |
 
 Everything is configured in `tags.toml`: add or remove scene tags (each is just a

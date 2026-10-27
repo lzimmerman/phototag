@@ -217,3 +217,25 @@ tag = "Film|Negative"
 prompts = ["a scanned color film negative", "an orange film negative with inverted colors",
            "a photo of a color negative strip"]
 threshold = 0.1
+
+# Astro: thresholds were set by checking a library of moon, star and aurora photos
+[[scene]]
+tag = "Astro|Moon"
+prompts = ["a photo of the moon", "a close-up of the full moon", "a crescent moon in the night sky"]
+threshold = 0.05
+
+[[scene]]
+tag = "Astro|Night sky"
+prompts = ["a starry night sky", "the milky way at night", "star trails in the night sky",
+           "an astrophotograph of stars"]
+threshold = 0.03
+
+[[scene]]
+tag = "Astro|Aurora"
+prompts = ["the northern lights", "an aurora in the night sky", "green and red aurora borealis"]
+threshold = 0.05
+
+[[scene]]
+tag = "Astro|Lunar eclipse"
+prompts = ["a lunar eclipse", "a red blood moon", "the moon during a total lunar eclipse"]
+threshold = 0.5      # lower, and orange moons low on the horizon join in
