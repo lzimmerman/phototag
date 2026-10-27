@@ -50,6 +50,26 @@ negative_min_tint = 20          # a strong overall cast...
 negative_max_spread = 32        # ...that is nearly one colour (sunsets and flowers vary far more)
 negative_max_dark = 0.15        # share of near-black pixels: rules out moons and silhouettes.
                                 # Saved by Scan from Oct 2026; older scans skip this rule until rescanned.
+# Black-and-white negatives: a black-and-white photo with almost no true black,
+# not too dark overall (rules out grey night skies), that the scene model picks
+# as a negative over the ordinary photos described in [film.bw_check].
+bw_negative_max_dark = 0.03
+bw_negative_min_brightness = 0.25
+bw_negative_min_confidence = 0.5    # lower finds more, but more ordinary B&W photos too
+
+[film.bw_check]
+"a scanned black and white film negative" = "Film|Negative"
+"an inverted black and white photo with white shadows" = "Film|Negative"
+"a black and white negative strip with sprocket holes" = "Film|Negative"
+"a black and white photograph" = ""
+"a black and white macro photo" = ""
+"a bright high key black and white photo" = ""
+"a black and white photo of a landscape" = ""
+"a black and white photo of a person" = ""
+"a black and white photo of a building" = ""
+"a bird flying in a grey sky" = ""
+"a bird against an overcast sky" = ""
+"a grey night sky" = ""
 
 [animals]
 # The detector (YOLO, under [objects]) finds animals but only knows ten kinds, so it
@@ -297,8 +317,9 @@ default_threshold = 0.005
 # photos with any of these tags get no detector tags (people, animals, vehicles):
 # the detector finds "people" in profile pictures, cartoons and headlines
 no_detections_with = ["Not a photo"]
-# photos with any of these tags get no Scene, Subject or Style tags: a negative's
-# inverted colours look like city streets, buildings and rooms to the model
+# photos with any of these tags get no Scene, Subject, Style or Light tags: a
+# negative's inverted colours look like city streets, buildings and rooms to the
+# model, and its "high key" is really a dark scene
 no_scenes_with = ["Film|Negative", "Not a photo"]
 
 [[scene]]

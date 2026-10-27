@@ -392,12 +392,19 @@ If something else breaks, the full error text is what's needed to fix it.
 ## Notes and limits
 
 
-- **Film|Negative** combines a scene tag (which finds black-and-white negatives
-  and film strips) with a colour rule for orange colour negatives, in `[film]` in
-  `tags.toml`. The colour rule needs a reading Scan saves from October 2026 on,
-  so for photos scanned earlier, run `scan FOLDER --rescan` once to include them.
-  On a test library about 97% of the photos it tagged were negatives; the misses
-  were a few warm sunset or silhouette shots and some positive slide scans.
+- **Film|Negative** combines three checks, all in `[film]` in `tags.toml`: a
+  scene tag that finds film strips and obvious negatives; a colour rule for
+  orange colour negatives; and a black-and-white rule (a grey photo with almost
+  no true black, not too dark, that the scene model rates as more likely a
+  negative than an ordinary black-and-white photo). Negatives get no Scene,
+  Subject, Style or Light tags, since an inverted image looks like a close-up or
+  a "high key" shot. The colour and black-and-white rules need a reading Scan
+  saves from October 2026 on, so for photos scanned earlier, run
+  `scan FOLDER --rescan` once to include them.
+  On a test library the colour rule was about 97% right. The black-and-white
+  rule roughly doubled the negatives found and is mostly right, but the scene
+  model can't always tell an inverted cat or tree from a normal one, so some
+  black-and-white negatives are missed and a few ordinary photos are caught.
 
 - **RAW files are judged by their embedded JPEG preview**: what the camera
   produced, not your Lightroom/Capture One edits. A RAW you converted to B&W in an

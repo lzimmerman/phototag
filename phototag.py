@@ -823,7 +823,7 @@ def species_prompt(name: str) -> str:
 # description lists in tags.toml where the scene model picks the closest match:
 # section -> (its table of description = tag, how a description becomes a prompt)
 MATCH_LISTS = {"animals": ("species", species_prompt), "birds": ("species", species_prompt),
-               "not_photo": ("kinds", str), "people": ("check", str)}
+               "not_photo": ("kinds", str), "people": ("check", str), "film": ("bw_check", str)}
 
 
 def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
@@ -873,17 +873,24 @@ def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
     return out
 
 
-def best_match(emb: np.ndarray, sv: dict, key: str, min_conf: float | None = None) -> tuple[str, float] | None:
-    """The tag from a MATCH_LISTS list that the scene model is confident about, or
-    None if unsure."""
-    tags, mat, default_conf = sv[key]
-    min_conf = default_conf if min_conf is None else min_conf
+def match_shares(emb: np.ndarray, sv: dict, key: str) -> dict[str, float]:
+    """How likely each tag in a MATCH_LISTS list is; descriptions sharing a tag
+    (crow, raven) pool their share."""
+    tags, mat, _ = sv[key]
     logits = sv["scale"] * (mat @ emb)
     pr = np.exp(logits - logits.max())
     pr /= pr.sum()
     by_tag: dict[str, float] = {}
-    for t, q in zip(tags, pr):  # descriptions sharing a tag (crow, raven) pool their confidence
+    for t, q in zip(tags, pr):
         by_tag[t] = by_tag.get(t, 0.0) + float(q)
+    return by_tag
+
+
+def best_match(emb: np.ndarray, sv: dict, key: str, min_conf: float | None = None) -> tuple[str, float] | None:
+    """The tag from a MATCH_LISTS list that the scene model is confident about, or
+    None if unsure."""
+    min_conf = sv[key][2] if min_conf is None else min_conf
+    by_tag = match_shares(emb, sv, key)
     best = max(by_tag, key=by_tag.get)
     return (best, by_tag[best]) if by_tag[best] >= min_conf else None
 
@@ -955,6 +962,17 @@ def cmd_tag(args, cfg):
                 if (pick := best_match(emb, sv, "not_photo", conf)) and pick[0]:
                     tags.append(pick[0])
                     scores[pick[0]] = round(pick[1], 4)
+            # black-and-white negatives: grey, with no true black (the scene's darkest
+            # parts are clear film base), and the scene model must agree
+            st = json.loads(r["stats"])
+            fi = cfg.get("film", {})
+            if (sv["film"] and "Color|Black and white" in tags and "Film|Negative" not in tags
+                    and st.get("dark", 1) <= fi.get("bw_negative_max_dark", 0.03)
+                    and st["brightness"] >= fi.get("bw_negative_min_brightness", 0.25)
+                    and (share := match_shares(emb, sv, "film").get("Film|Negative", 0))
+                    >= fi.get("bw_negative_min_confidence", 0.5)):
+                tags.append("Film|Negative")
+                scores["Film|Negative"] = round(share, 4)
             # the detector also "finds" people in flowers, or in a hand stroking a cat:
             # keep People tags only when the scene model agrees it's a photo of people
             if sv["people"] and any(t.startswith("People|") for t in found):
@@ -973,7 +991,7 @@ def cmd_tag(args, cfg):
                 found = [t for t in found if t != bird] + ([pick[0]] if pick[0] else [bird])
                 scores[pick[0] or bird] = round(pick[1], 4)
         if has_any(tags, cfg.get("scenes", {}).get("no_scenes_with", [])):
-            tags = [t for t in tags if t.split("|")[0] not in ("Scene", "Subject", "Style")]
+            tags = [t for t in tags if t.split("|")[0] not in ("Scene", "Subject", "Style", "Light")]
         if has_any(tags, cfg.get("scenes", {}).get("no_detections_with", [])):
             found = []  # e.g. screenshots: the "people" are profile pictures and cartoons
         tags += found
