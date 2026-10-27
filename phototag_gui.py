@@ -33,6 +33,8 @@ STEPS = {
     "tag": "Apply the rules in tags.toml to the analysed photos. Takes seconds; re-run after editing tags.toml.",
     "review": "Open a contact sheet for one tag in your browser, to check it and tune thresholds.",
     "write": "Save the tags to .xmp sidecars next to the photos, then reread the albums in digiKam.",
+    "html": "Make a web page for browsing all your photos by tag, with thumbnails. It only uses what "
+            "Scan saved, so it works on read-only drives, without digiKam, and with the drive unplugged.",
 }
 
 
@@ -40,7 +42,7 @@ STEPS = {
 
 
 def build_command(step: str, folder: str = "", limit: int | None = None, no_ml=False,
-                  tag: str = "", dry_run=False, only_folder=False, retry=False) -> list[str]:
+                  tag: str = "", dry_run=False, only_folder=False, retry=False, open_page=True) -> list[str]:
     cmd = [sys.executable, "-u", str(SCRIPT), step]
     if step == "scan":
         cmd.append(folder)
@@ -57,6 +59,8 @@ def build_command(step: str, folder: str = "", limit: int | None = None, no_ml=F
             cmd.append(folder)
         if dry_run:
             cmd.append("--dry-run")
+    elif step == "html" and not open_page:
+        cmd.append("--no-open")
     return cmd
 
 
@@ -117,6 +121,9 @@ def summarise(step: str, lines: list[str], code: int, stopped: bool) -> str:
         return s + ("" if "would" in s or "up to date" in s else "  Now reread the albums in digiKam.")
     if step == "review":
         return "Opened in your browser."
+    if step == "html":
+        m = re.search(r"^wrote (.+) \((\d+) photos\)", find(r"^wrote ") or "")
+        return f"Made a page of {m.group(2)} photos: {m.group(1)}" if m else "Done."
     return "Done."
 
 
@@ -266,6 +273,11 @@ def main():
     ttk.Checkbutton(o, text="Preview only (dry run)", variable=dry).pack(side="left", padx=(0, 14))
     ttk.Checkbutton(o, text="Only photos in the folder above", variable=only_folder).pack(side="left")
 
+    # web page options
+    o = step_row(4, "html", "5. Web page")
+    open_page = tk.BooleanVar(value=True)
+    ttk.Checkbutton(o, text="Open when done", variable=open_page).pack(side="left")
+
     # progress + log
     pf = ttk.Frame(outer)
     pf.pack(fill="x", pady=(12, 4))
@@ -370,7 +382,7 @@ def main():
         except ValueError:
             n = None
         cmd = build_command(step, str(Path(f).expanduser()) if f else "", n, no_ml.get(),
-                            tag.get().strip(), dry.get(), only_folder.get(), retry.get())
+                            tag.get().strip(), dry.get(), only_folder.get(), retry.get(), open_page.get())
         remember()
         write_log(f"\n$ phototag {' '.join(cmd[3:])}")
         notes[step].configure(text="Running…", foreground="")

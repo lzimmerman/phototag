@@ -2,7 +2,9 @@
 
 Offline auto-tagging for a photo library, written as XMP sidecars that digiKam reads.
 Your original photos are never modified. Each photo gets a `.xmp` file next to it
-(`IMG_0001.CR2` → `IMG_0001.CR2.xmp`).
+(`IMG_0001.CR2` → `IMG_0001.CR2.xmp`). Without digiKam, or for photos on a
+read-only drive, a web page lets you browse everything by tag instead (see
+"Browsing without digiKam").
 
 All tags go under one top-level tag, `Auto`, so they stay separate from your own:
 
@@ -71,8 +73,8 @@ python phototag.py write
 
 ### The window (optional)
 
-`phototag_gui.py` puts the same four steps in a small window: a folder picker,
-**Scan**, **Tag**, **Review** and **Write** buttons with a note under each
+`phototag_gui.py` puts the same steps in a small window: a folder picker,
+**Scan**, **Tag**, **Review**, **Write** and **Web page** buttons with a note under each
 saying what it does and how the last run went, a progress bar, a **Stop**
 button, and a log. Each button runs the same command you'd type in Terminal,
 so everything above still applies.
@@ -121,6 +123,7 @@ new or changed files.
 | `explain FILE` | Every EXIF value, statistic, detection and scene score for one photo. Useful for "why was this tagged Night?" |
 | `write [FOLDER]` | Write or update sidecars (only those that changed). `--dry-run` to preview. |
 | `write --remove` | Take all `Auto` tags back out of the sidecars. |
+| `html [FILE]` | A web page for browsing the whole library by tag, with thumbnails (see below). Uses only the cache. |
 
 ### Reviewing and tuning tags
 
@@ -183,6 +186,28 @@ Practical points:
 - To see why one photo did or didn't get a tag, run `explain` on it: it shows
   all of that photo's scene scores at once.
 
+## Browsing without digiKam
+
+`python phototag.py html` (or **5. Web page** in the window) makes one web page
+of every tagged photo, with its thumbnail, and opens it in your browser:
+
+- **Filter by tag** in the sidebar: tick several to narrow down (Dog + Golden
+  hour + 2019). **All** at the top of a group matches anything in it, e.g. any
+  animal. Counts update as you filter.
+- **Year** comes from the capture date, so you can filter by it like a tag.
+- **Search** matches file and folder names. Sort by newest, oldest or folder.
+- **Click a photo** for its details: all its tags (click one to filter by it),
+  **Copy path** (then ⌘⇧G in Finder to go there), and **Open original** for
+  JPEG and PNG files (browsers can't show RAW files).
+
+It's built only from what Scan saved in `~/.phototag`, so it never touches the
+photo drive. That makes it the way to use the tags when the drive is read-only
+or you don't use digiKam, and browsing works with the drive unplugged (opening
+originals needs it connected). It's saved as `~/.phototag/library.html`; run
+`html` again after `tag` to update it. Give a file name (`html ~/Desktop/photos.html`)
+to save it somewhere else; it still loads thumbnails from `~/.phototag`, so it
+only works on this Mac.
+
 ## digiKam settings (once)
 
 More detail, including bulk rereading across subfolders, is in `DIGIKAM.md`.
@@ -239,8 +264,11 @@ What to watch for on a first run:
   off), so the drive isn't disconnected by sleep.
 - **Photos that can't be read** are listed as they come up and counted at the
   end; the rest carry on. Try them again with `--retry-errors`.
-- **Write stops by itself after 20 failures in a row** (usually a read-only
-  or disconnected drive) instead of failing every remaining photo.
+- **Write checks first for folders it can't write to** (a read-only drive, or
+  no permission), says how many photos that affects and why, and writes the
+  rest. If nothing can be written, it suggests the web page instead.
+- **Write stops by itself after 20 failures in a row** (usually a
+  disconnected drive) instead of failing every remaining photo.
 - **Photo library packages are skipped:** Apple Photos, iPhoto and Aperture
   libraries, and Lightroom's previews. phototag never looks inside them or writes
   sidecars there. Scan names each one it skips.
@@ -254,7 +282,8 @@ If something else breaks, the full error text is what's needed to fix it.
 - **Next to your photos:** only the `.xmp` sidecars, created by `write`. digiKam
   looks for sidecars in the photo's own folder. Photos themselves are never changed.
   `scan`, `tag`, `review` and `explain` write nothing in your photo folders.
-- **`~/.phototag`:** database, thumbnails, review pages and the YOLO model.
+- **`~/.phototag`:** database, thumbnails, review pages, the library page
+  (`library.html`) and the YOLO model.
   Use `--cache PATH` on every command (or set `PHOTOTAG_CACHE`) to keep it
   elsewhere, e.g. `~/code-ai/scripts/python/phototag/cache`.
 - **`~/.cache/huggingface`:** the SigLIP scene model.

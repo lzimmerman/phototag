@@ -13,6 +13,7 @@ keywords to XMP sidecar files. Original image files are never modified.
     python phototag.py explain /path/to/IMG_0001.CR2 # everything known about one photo
     python phototag.py write --dry-run               # show what would change
     python phototag.py write                         # write/update the .xmp sidecars
+    python phototag.py html                          # web page to browse by tag (no digiKam needed)
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ import sys
 import threading
 import time
 import tomllib
+import urllib.parse
 import webbrowser
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -952,10 +954,37 @@ def write_one(et: ExifTool, src: Path, want: list[str], cfg) -> tuple[Path, str]
     return sc, "updated" if exists else "created"
 
 
+def unwritable_folders(paths) -> dict[str, str]:
+    """Folders (that exist) where sidecars can't be created, with the reason."""
+    bad = {}
+    for d in {os.path.dirname(p) for p in paths}:
+        if os.path.isdir(d) and not os.access(d, os.W_OK):
+            try:
+                ro = bool(os.statvfs(d).f_flag & os.ST_RDONLY)
+            except OSError:
+                ro = False
+            bad[d] = ("they're on a read-only drive (on a Mac, NTFS drives are)" if ro
+                      else "you don't have permission to write there")
+    return bad
+
+
 def cmd_write(args, cfg):
     db = open_db(args.cache)
     under = Path(args.root).expanduser().resolve() if args.root else None
     todo = list(_pending(db, cfg, under, remove=args.remove))
+    bad = unwritable_folders(path for path, _, _ in todo)
+    if bad:
+        lines = []
+        for why in sorted(set(bad.values())):
+            folders = sorted(d for d, w in bad.items() if w == why)
+            n = sum(1 for path, _, _ in todo if bad.get(os.path.dirname(path)) == why)
+            lines.append(f"{n} photos can't get sidecars because {why}. For example: {folders[0]}")
+        todo = [t for t in todo if os.path.dirname(t[0]) not in bad]
+        msg = "\n".join(lines)
+        if not todo:
+            sys.exit(f"{msg}\nNothing was written. To browse your tags without sidecars or digiKam, "
+                     f"run: python {Path(__file__).name} html")
+        log(f"{msg}\nSkipping those; the rest are written as usual.")
     if args.limit:
         todo = todo[: args.limit]
     if not todo:
@@ -1121,6 +1150,168 @@ document.addEventListener("click", e => {{
         webbrowser.open(out.as_uri())
 
 
+# ------------------------------------------------------------------- html ---
+
+LIBRARY_PAGE = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photo library</title>
+<style>
+:root{--bg:#f6f5f2;--panel:#fff;--fg:#1d1d1d;--muted:#5f5f5f;--line:#d9d6cf;--accent:#0b57d0;--accent-fg:#fff;--chip:#e8eefb}
+@media (prefers-color-scheme: dark){:root{--bg:#161616;--panel:#202020;--fg:#ececec;--muted:#a8a8a8;--line:#3a3a3a;--accent:#8ab4f8;--accent-fg:#0b1a33;--chip:#26324a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 -apple-system,system-ui,sans-serif;display:grid;grid-template-columns:270px 1fr;height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--line);overflow:auto;padding:14px 12px}
+main{overflow:auto;padding:14px 18px}
+h1{font-size:17px;margin:0 0 10px}
+input[type=search]{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
+details{margin-top:8px}
+summary{cursor:pointer;font-weight:600;padding:3px 0}
+.tag{display:flex;justify-content:space-between;gap:8px;width:100%;border:0;background:none;color:var(--fg);font:inherit;text-align:left;padding:2px 6px;border-radius:4px;cursor:pointer}
+.tag:hover{background:var(--chip)} .tag.on{background:var(--accent);color:var(--accent-fg)}
+.tag .n{color:var(--muted);font-variant-numeric:tabular-nums} .tag.on .n{color:inherit}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:12px}
+.chip{border:0;background:var(--accent);color:var(--accent-fg);border-radius:12px;padding:3px 10px;font:inherit;cursor:pointer}
+.count{color:var(--muted)} select,.btn{font:inherit;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+figure{margin:0;cursor:pointer} figure img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:4px;background:#8882;display:block}
+figcaption{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+#more{height:40px}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);max-width:min(720px,94vw);padding:16px}
+dialog::backdrop{background:#0008}
+dialog img{max-width:100%;max-height:60vh;display:block;margin:0 auto 10px;border-radius:4px}
+.path{font-size:12px;word-break:break-all;color:var(--muted)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.tags button{border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:12px;padding:2px 9px;font:inherit;font-size:12px;cursor:pointer}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px} a.btn{text-decoration:none}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:6px 12px;border-radius:6px;font-size:12px;opacity:0;transition:opacity .2s;pointer-events:none}
+@media (max-width:700px){body{grid-template-columns:1fr;height:auto} aside{border-right:0;border-bottom:1px solid var(--line);max-height:45vh}}
+</style></head><body>
+<aside><h1>Photo library</h1>
+<input type="search" id="q" placeholder="Search file or folder names" aria-label="Search file or folder names">
+<div id="facets"></div></aside>
+<main><div class="bar"><span id="chips"></span><span class="count" id="count"></span>
+<select id="sort" aria-label="Sort"><option value="new">Newest first</option><option value="old">Oldest first</option><option value="path">By folder</option></select>
+<button class="btn" id="clear" hidden>Clear filters</button></div>
+<div class="grid" id="grid"></div><div id="more"></div></main>
+<dialog id="detail"><img id="d-img" alt=""><div id="d-name"></div><div class="path" id="d-path"></div>
+<div class="tags" id="d-tags"></div>
+<div class="row"><button class="btn" id="d-copy">Copy path</button><a class="btn" id="d-open" target="_blank">Open original</a><button class="btn" id="d-close">Close</button></div></dialog>
+<div id="toast"></div>
+<script>
+const D = __DATA__;
+const T = D.tags, P = D.photos, THUMBS = D.thumbs, VIEW = new Set(D.viewable);
+const sel = new Set(); let shown = [], rendered = 0;
+const $ = id => document.getElementById(id);
+const name = p => p.slice(p.lastIndexOf("/") + 1);
+const uri = p => "file://" + p.split("/").map(encodeURIComponent).join("/");
+function toast(msg){ const t = $("toast"); t.textContent = msg; t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 1400); }
+function copy(text){
+  const done = () => toast("Path copied. In Finder, press ⌘⇧G and paste to go there.");
+  const fallback = () => { const a = document.createElement("textarea"); a.value = text; document.body.appendChild(a); a.select();
+    try { document.execCommand("copy"); done(); } catch (_) {} a.remove(); };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback); else fallback();
+}
+function matches(){
+  const q = $("q").value.trim().toLowerCase(), need = [...sel];
+  return P.filter(p => need.every(t => p[3].includes(t)) && (!q || p[0].toLowerCase().includes(q)));
+}
+function update(){
+  shown = matches();
+  const s = $("sort").value;
+  shown.sort(s === "path" ? (a, b) => a[0].localeCompare(b[0]) : s === "old" ? (a, b) => (a[2] || "9").localeCompare(b[2] || "9") : (a, b) => (b[2] || "").localeCompare(a[2] || ""));
+  $("count").textContent = shown.length.toLocaleString() + " of " + P.length.toLocaleString() + " photos";
+  $("clear").hidden = !sel.size && !$("q").value;
+  $("chips").replaceChildren(...[...sel].map(t => { const b = document.createElement("button"); b.className = "chip";
+    b.textContent = T[t].replaceAll("|", " › ") + " ×"; b.title = "Remove this filter"; b.onclick = () => toggle(t); return b; }));
+  facets(); $("grid").replaceChildren(); rendered = 0; more();
+}
+function facets(){
+  const counts = new Map();
+  for (const p of shown) for (const t of p[3]) counts.set(t, (counts.get(t) || 0) + 1);
+  const open = new Set([...document.querySelectorAll("#facets details[open]")].map(d => d.dataset.g));
+  const groups = new Map();
+  T.forEach((t, i) => { if (!counts.has(i) && !sel.has(i)) return; const g = t.split("|")[0];
+    (groups.get(g) || groups.set(g, []).get(g)).push(i); });  // the group itself sorts first: "All"
+  $("facets").replaceChildren(...[...groups].map(([g, ids]) => {
+    const d = document.createElement("details"); d.dataset.g = g; d.open = open.has(g) || ids.some(i => sel.has(i));
+    const sm = document.createElement("summary"); sm.textContent = g; d.append(sm);
+    for (const i of ids) {
+      const b = document.createElement("button"), parts = T[i].split("|");
+      b.className = "tag" + (sel.has(i) ? " on" : ""); b.style.paddingLeft = (6 + 12 * Math.max(0, parts.length - 2)) + "px";
+      const l = document.createElement("span"); l.textContent = parts.length === 1 ? "All" : parts[parts.length - 1];
+      const n = document.createElement("span"); n.className = "n"; n.textContent = (counts.get(i) || 0).toLocaleString();
+      b.append(l, n); b.onclick = () => toggle(i); d.append(b);
+    }
+    return d;
+  }));
+}
+function toggle(i){ sel.has(i) ? sel.delete(i) : sel.add(i); update(); }
+function more(){
+  const frag = document.createDocumentFragment();
+  for (const p of shown.slice(rendered, rendered + 240)) {
+    const f = document.createElement("figure"), img = document.createElement("img"), c = document.createElement("figcaption");
+    img.loading = "lazy"; img.alt = ""; img.src = THUMBS + "/" + p[1]; c.textContent = (p[2] ? p[2] + " · " : "") + name(p[0]);
+    f.title = p[0]; f.append(img, c); f.onclick = () => detail(p); frag.append(f);
+  }
+  rendered += 240; $("grid").append(frag);
+}
+function detail(p){
+  $("d-img").src = THUMBS + "/" + p[1]; $("d-name").textContent = (p[2] ? p[2] + " · " : "") + name(p[0]);
+  $("d-path").textContent = p[0];
+  $("d-tags").replaceChildren(...p[3].filter(t => T[t].includes("|")).map(t => { const b = document.createElement("button");
+    b.textContent = T[t].replaceAll("|", " › "); b.title = "Show photos with this tag";
+    b.onclick = () => { $("detail").close(); if (!sel.has(t)) toggle(t); }; return b; }));
+  $("d-copy").onclick = () => copy(p[0]);
+  const ext = p[0].slice(p[0].lastIndexOf(".")).toLowerCase(), o = $("d-open");
+  o.hidden = !VIEW.has(ext); o.href = uri(p[0]);
+  $("detail").showModal();
+}
+new IntersectionObserver(e => { if (e[0].isIntersecting && rendered < shown.length) more(); }, {root: document.querySelector("main"), rootMargin: "600px"}).observe($("more"));
+let qt; $("q").oninput = () => { clearTimeout(qt); qt = setTimeout(update, 200); };
+$("sort").onchange = update;
+$("clear").onclick = () => { sel.clear(); $("q").value = ""; update(); };
+$("d-close").onclick = () => $("detail").close();
+update();
+</script></body></html>
+"""
+
+
+def cmd_html(args, cfg):
+    db = open_db(args.cache)
+    rows = db.execute("SELECT t.path, t.tags, p.thumb, p.meta FROM tags t JOIN photos p USING(path) "
+                      "WHERE p.thumb IS NOT NULL").fetchall()
+    if not rows:
+        sys.exit("No tagged photos yet. Run scan, then tag.")
+    out = Path(args.out).expanduser().resolve() if args.out else args.cache / "library.html"
+    ids: dict[str, int] = {}
+    photos = []
+    for r in rows:
+        tags = set()
+        for t in json.loads(r["tags"]):
+            parts = t.split("|")
+            tags.update("|".join(parts[:i]) for i in range(1, len(parts) + 1))  # "Animals" matches "Animals|Dog"
+        m = json.loads(r["meta"] or "{}")
+        dt = parse_dt(m.get("DateTimeOriginal") or m.get("CreateDate"))
+        if dt:
+            tags.update(("Year", f"Year|{dt.year}"))
+        photos.append([r["path"], r["thumb"], dt.strftime("%Y-%m-%d") if dt else "",
+                       sorted(ids.setdefault(t, len(ids)) for t in tags)])
+    # tags in display order: groups alphabetically (Year newest first), then by name
+    order = sorted(ids, key=lambda t: (t.split("|")[0], [(-int(x) if x.isdigit() else 0, x) for x in t.split("|")[1:]]))
+    remap = {ids[t]: i for i, t in enumerate(order)}
+    for p in photos:
+        p[3] = sorted(remap[i] for i in p[3])
+    thumbs = os.path.relpath(args.cache / "thumbs", out.parent)
+    data = {"tags": order, "photos": photos, "thumbs": urllib.parse.quote(thumbs),
+            "viewable": sorted(BROWSER_VIEWABLE)}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(LIBRARY_PAGE.replace("__DATA__", json.dumps(data, separators=(",", ":")).replace("</", "<\\/")),
+                   encoding="utf-8")
+    print(f"wrote {out} ({len(photos)} photos)")
+    if not args.no_open:
+        webbrowser.open(out.as_uri())
+
+
 # ---------------------------------------------------------------- explain ---
 
 
@@ -1189,6 +1380,10 @@ def main():
     r.add_argument("--floor", type=float, default=0.5, help="show scores down to threshold x this")
     r.add_argument("--no-open", action="store_true")
 
+    h = sub.add_parser("html", help="a web page for browsing the library by tag (uses the cache only)")
+    h.add_argument("out", nargs="?", help="where to save it (default ~/.phototag/library.html)")
+    h.add_argument("--no-open", action="store_true")
+
     e = sub.add_parser("explain", help="show everything known about one photo")
     e.add_argument("path")
 
@@ -1199,7 +1394,8 @@ def main():
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, _interrupt)
     cfg = load_config(args.config)
-    {"scan": cmd_scan, "tag": cmd_tag, "write": cmd_write, "review": cmd_review, "explain": cmd_explain}[args.cmd](args, cfg)
+    {"scan": cmd_scan, "tag": cmd_tag, "write": cmd_write, "review": cmd_review,
+     "html": cmd_html, "explain": cmd_explain}[args.cmd](args, cfg)
 
 
 if __name__ == "__main__":
