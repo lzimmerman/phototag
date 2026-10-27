@@ -253,6 +253,27 @@ tag_none = false           # also tag photos with nobody in them as People|None
 # People tags are kept only when the scene model rates the photo at least this
 # likely to be of people, against the other descriptions in [people.check].
 check_min_confidence = 0.5
+# People|Selfie: when the phone says the front camera took it (iPhones and some
+# Android phones name the lens, e.g. "iPhone 15 front camera"), or when a photo
+# with people in it looks like a selfie to the scene model ([people.selfie_check]).
+# selfie_min_confidence is a guess: the library the rest was tuned on had no
+# selfies, so check with `review "People|Selfie"` and lower it if selfies are missed.
+selfie = true
+selfie_lens_words = ["front"]
+selfie_min_confidence = 0.9
+
+[people.selfie_check]
+"a selfie" = "People|Selfie"
+"a selfie taken at arm's length with a phone" = "People|Selfie"
+"a close-up selfie of a face" = "People|Selfie"
+"a group selfie" = "People|Selfie"
+"a mirror selfie" = "People|Selfie"
+"a portrait photo of a person taken by someone else" = ""
+"a photo of people at an event" = ""
+"a candid photo of a person" = ""
+"a photo of a crowd" = ""
+"a photo of a person far away" = ""
+"a posed group photo" = ""
 
 [people.check]
 "a photo of a person" = "People"

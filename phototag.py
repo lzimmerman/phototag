@@ -821,17 +821,19 @@ def species_prompt(name: str) -> str:
 
 
 # description lists in tags.toml where the scene model picks the closest match:
-# section -> (its table of description = tag, how a description becomes a prompt)
-MATCH_LISTS = {"animals": ("species", species_prompt), "birds": ("species", species_prompt),
-               "not_photo": ("kinds", str), "people": ("check", str), "film": ("bw_check", str)}
+# name -> (its tags.toml section, the table of description = tag in it, how a
+# description becomes a prompt)
+MATCH_LISTS = {"animals": ("animals", "species", species_prompt), "birds": ("birds", "species", species_prompt),
+               "not_photo": ("not_photo", "kinds", str), "people": ("people", "check", str),
+               "selfie": ("people", "selfie_check", str), "film": ("film", "bw_check", str)}
 
 
 def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
     """Prompt embeddings for the scene tags and the MATCH_LISTS ([animals], [birds],
     [not_photo]), cached so `tag` rarely needs the model."""
     scenes = cfg.get("scene", []) if cfg.get("scenes", {}).get("enabled", True) else []
-    lists = {k: cfg.get(k, {}) for k in MATCH_LISTS}
-    lists = {k: c for k, c in lists.items() if c.get("enabled", True) and c.get(MATCH_LISTS[k][0])}
+    lists = {k: cfg.get(sec, {}) for k, (sec, _, _) in MATCH_LISTS.items()}
+    lists = {k: c for k, c in lists.items() if c.get("enabled", True) and c.get(MATCH_LISTS[k][1])}
     if not (scenes or lists) or not model_ids:
         return None
     if len(model_ids) > 1:
@@ -839,7 +841,7 @@ def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
             "run `scan ROOT --rescan-ml` so they match. Using the most common one.")
     mid = db.execute("SELECT emb_model, COUNT(*) c FROM photos WHERE emb_model IS NOT NULL GROUP BY 1 ORDER BY c DESC").fetchone()[0]
     prompts = sorted({p for s in scenes for p in s["prompts"]}
-                     | {MATCH_LISTS[k][1](n) for k, c in lists.items() for n in c[MATCH_LISTS[k][0]]})
+                     | {MATCH_LISTS[k][2](n) for k, c in lists.items() for n in c[MATCH_LISTS[k][1]]})
     have = {r["prompt"]: np.frombuffer(r["emb"], dtype=np.float32)
             for r in db.execute("SELECT prompt, emb FROM textcache WHERE model=?", (mid,))}
     kv = db.execute("SELECT v FROM kv WHERE k=?", (f"logit:{mid}",)).fetchone()
@@ -866,7 +868,7 @@ def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
         ths.append(s.get("threshold", default))
     out = {"model": mid, "scale": scale, "bias": bias, "names": names, "ths": np.array(ths),
            "mat": np.stack(mats) if mats else None}
-    for k, (table, prompt) in MATCH_LISTS.items():
+    for k, (_, table, prompt) in MATCH_LISTS.items():
         c = lists.get(k)
         out[k] = (list(c[table].values()), np.stack([have[prompt(n)] for n in c[table]]),
                   c.get("min_confidence", 0.8)) if c else None
@@ -942,7 +944,8 @@ def cmd_tag(args, cfg):
     counts: dict[str, int] = {}
     db.execute("DELETE FROM tags")
     for r in rows:
-        tags = exif_tags(json.loads(r["meta"] or "{}"), cfg, places.get(r["path"]))
+        meta = json.loads(r["meta"] or "{}")
+        tags = exif_tags(meta, cfg, places.get(r["path"]))
         tags += computed_tags(json.loads(r["stats"]), cfg)
         found = detection_tags(json.loads(r["dets"]), cfg) if r["dets"] is not None else []
         scores = {}
@@ -979,6 +982,13 @@ def cmd_tag(args, cfg):
                 pick = best_match(emb, sv, "people", cfg["people"].get("check_min_confidence", 0.5))
                 if not pick or pick[0] != "People":
                     found = [t for t in found if not t.startswith("People|")]
+            # selfies the camera didn't label (see below): judged by the picture
+            pc = cfg.get("people", {})
+            if (sv["selfie"] and pc.get("selfie", True) and any(t.startswith("People|") for t in found)
+                    and (pick := best_match(emb, sv, "selfie", pc.get("selfie_min_confidence", 0.9)))
+                    and pick[0]):
+                found.append(pick[0])
+                scores[pick[0]] = round(pick[1], 4)
             # the detector found an animal, but only knows ten kinds: let the scene
             # model say which, when it's sure ("" in the list means no tag)
             if sv["animals"] and animal_tags & set(found) and (pick := best_match(emb, sv, "animals")):
@@ -990,6 +1000,11 @@ def cmd_tag(args, cfg):
             if sv["birds"] and bird in found and (pick := best_match(emb, sv, "birds")):
                 found = [t for t in found if t != bird] + ([pick[0]] if pick[0] else [bird])
                 scores[pick[0] or bird] = round(pick[1], 4)
+        # phones that name the lens say which camera: "iPhone 15 front camera 2.69mm f/1.9"
+        pc = cfg.get("people", {})
+        lens = " ".join(str(meta.get(k) or "") for k in ("LensModel", "Lens", "LensID")).lower()
+        if pc.get("enabled", True) and pc.get("selfie", True) and any(w in lens for w in pc.get("selfie_lens_words", ["front"])):
+            found.append("People|Selfie")
         if has_any(tags, cfg.get("scenes", {}).get("no_scenes_with", [])):
             tags = [t for t in tags if t.split("|")[0] not in ("Scene", "Subject", "Style", "Light")]
         if has_any(tags, cfg.get("scenes", {}).get("no_detections_with", [])):
