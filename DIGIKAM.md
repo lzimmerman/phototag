@@ -17,9 +17,12 @@ Open **Settings › Configure digiKam › Metadata**.
    information to the files' metadata. Tags you add yourself then get saved
    into the files and sidecars too, not only into digiKam's database.
    See "Before you reread" below for why this matters.
-4. **Optional, on the Sidecars tab:** choose to write metadata for RAW files to
-   sidecars only. digiKam's own edits then land in the same `.xmp` files and the
-   RAW files are never written to.
+4. **Sidecars tab: turn on writing to sidecar files**, for JPEGs as well as RAW
+   files (the option that writes to the XMP sidecar, or to the image and the
+   sidecar). Your own tag edits then land in the same `.xmp` files phototag
+   uses, which is how phototag sees an Auto tag you've removed and keeps it off
+   (see "Correcting tags"). Writing RAW metadata to sidecars only also means
+   the RAW files themselves are never written to.
 
 ## Getting new tags into digiKam
 
@@ -74,23 +77,27 @@ editing tags on the same photos in digiKam.
 
 ## Correcting tags
 
-phototag owns everything under **Auto**. Each time it rewrites a photo's
-sidecar, which happens when `tag` gives that photo a different set of tags, the
-Auto branch is reset to phototag's tags. Tags outside Auto are never touched.
-
-- **Fix one photo with your own tag.** Example: a coyote tagged *Auto › Animals ›
-  Farm animals*. Create your own tag *Animals › Coyote* (outside Auto) and assign
-  it; it stays whatever phototag does later.
-- **Removing a wrong Auto tag** (right-click it in the Tags panel) works, but
-  only until phototag next rewrites that photo, e.g. after you change
-  `tags.toml`. Then the wrong tag comes back. Your own tag from the step above
-  is the lasting fix.
-- **Don't add or rename tags under Auto by hand:** they're lost when phototag
-  rewrites the photo.
+- **Remove a wrong Auto tag** the normal way: right-click it in the Tags panel.
+  It stays removed: next time phototag rewrites that photo's sidecar, it sees
+  the tag has gone and leaves it off from then on, even if its rules would give
+  it again. Write reports how many such tags it's keeping off.
+- **Changed your mind?** Assign the tag again in digiKam. phototag sees it's
+  back and keeps it.
+- **Add the right tag as your own, outside Auto.** Example: a coyote tagged
+  *Auto › Animals › Farm animals*: remove that, then create your own tag
+  *Animals › Coyote* and assign it. phototag never touches tags outside Auto.
+- **Don't add or rename tags under Auto by hand:** phototag manages that branch
+  and drops tags there that it didn't write.
 - **A tag that's wrong across many photos** is better fixed in phototag. Raise
   its threshold, reword its prompts or extend the animal list in `tags.toml`
   (see "Naming animals" in the README), then run `tag` and `write`, and reread
   in digiKam.
+
+This relies on digiKam writing your edits into the `.xmp` sidecars (setting 4
+above), and on rereading after each `write` (see "Before you reread"). If
+digiKam only keeps an edit in its database, or writes it into the JPEG itself,
+phototag can't see it, and a removed tag comes back when phototag rewrites that
+photo.
 
 ## Removing automatic tags entirely
 

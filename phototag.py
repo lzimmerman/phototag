@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS tags(path TEXT PRIMARY KEY, tags TEXT, scores TEXT);
 CREATE TABLE IF NOT EXISTS written(path TEXT PRIMARY KEY, tags TEXT, sidecar TEXT, written_at REAL);
 CREATE TABLE IF NOT EXISTS textcache(model TEXT, prompt TEXT, emb BLOB, PRIMARY KEY(model, prompt));
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS removed(path TEXT, tag TEXT, PRIMARY KEY(path, tag));
 """
 
 
@@ -940,8 +941,17 @@ def _listify(v) -> list[str]:
     return [str(x) for x in v] if isinstance(v, list) else [str(v)]
 
 
+def removed_by_hand(db) -> dict[str, set[str]]:
+    """Auto tags you removed in digiKam, per photo: phototag leaves them off."""
+    out: dict[str, set[str]] = {}
+    for path, tag in db.execute("SELECT path, tag FROM removed"):
+        out.setdefault(path, set()).add(tag)
+    return out
+
+
 def _pending(db, cfg, under: Path | None, remove=False):
     root = cfg["root"]
+    removed = {} if remove else removed_by_hand(db)
     q = """SELECT t.path, t.tags, w.tags AS wtags FROM tags t LEFT JOIN written w ON w.path = t.path"""
     if remove:
         q = "SELECT w.path, '[]' AS tags, w.tags AS wtags FROM written w"
@@ -949,6 +959,7 @@ def _pending(db, cfg, under: Path | None, remove=False):
         if under and not r["path"].startswith(str(under) + os.sep):
             continue
         want = sorted(f"{root}|{t}" for t in json.loads(r["tags"]))
+        want = [w for w in want if w not in removed.get(r["path"], ())]
         had = json.loads(r["wtags"]) if r["wtags"] else None
         if want != had and not (had is None and not want):
             yield r["path"], want, had or []
@@ -962,7 +973,13 @@ def backup_sidecar(sc: Path, cache: Path):
         shutil.copy2(sc, dest)
 
 
-def write_one(et: ExifTool, src: Path, want: list[str], cfg) -> tuple[Path, str]:
+def write_one(et: ExifTool, src: Path, want: list[str], cfg, had=(), removed=()) -> tuple[Path, str, list, set, set]:
+    """Write `want` as the photo's Auto tags, keeping every other tag.
+
+    `had` is what phototag wrote last time and `removed` what you'd removed by hand
+    before. Returns the sidecar, "created"/"updated", the Auto tags written, the
+    tags you've removed by hand since last time, and removed ones you've put back.
+    """
     root = cfg["root"]
     sc = sidecar_for(src, cfg)
     exists = sc.exists()
@@ -976,6 +993,11 @@ def write_one(et: ExifTool, src: Path, want: list[str], cfg) -> tuple[Path, str]
         hier = _listify(d.get("Subject"))
     mine = [h for h in hier if h == root or h.startswith(root + "|")]
     keep = [h for h in hier if h not in mine]
+    # an Auto tag phototag wrote that's no longer in the sidecar was removed by hand:
+    # leave it off. One removed earlier and since put back by hand stays.
+    gone = {h for h in had if h not in mine} if exists else set()
+    back = {h for h in removed if h in mine}
+    want = sorted({w for w in want if w not in gone} | back)
     new = keep + [w for w in want if w not in keep]
     assign = []
     for tag, sep in (("XMP-lr:HierarchicalSubject", "|"), ("XMP-digiKam:TagsList", "/")):
@@ -993,7 +1015,7 @@ def write_one(et: ExifTool, src: Path, want: list[str], cfg) -> tuple[Path, str]
     if not ok:
         err = "; ".join(et.errors) or out.strip()
         raise RuntimeError(err)
-    return sc, "updated" if exists else "created"
+    return sc, "updated" if exists else "created", want, gone, back
 
 
 def unwritable_folders(paths) -> dict[str, str]:
@@ -1044,6 +1066,8 @@ def cmd_write(args, cfg):
     keep_awake()
     et = ExifTool()
     touched = {r[0] for r in db.execute("SELECT path FROM written")}  # their originals are backed up already
+    removed = {} if args.remove else removed_by_hand(db)
+    kept_off = 0  # tags you removed by hand that stay removed
     stats = {"created": 0, "updated": 0, "missing": 0, "failed": 0}
     in_a_row = 0  # failures since the last success
     total, t0, last = len(todo), time.time(), 0.0
@@ -1071,7 +1095,11 @@ def cmd_write(args, cfg):
                     sc = sidecar_for(src, cfg)
                     if path not in touched and sc.exists():
                         backup_sidecar(sc, args.cache)
-                    sc, what = write_one(et, src, want, cfg)
+                    sc, what, want, gone, back = write_one(et, src, want, cfg, () if args.remove else had,
+                                                           removed.get(path, ()))
+                    db.executemany("INSERT OR IGNORE INTO removed VALUES (?,?)", [(path, t) for t in gone])
+                    db.executemany("DELETE FROM removed WHERE path=? AND tag=?", [(path, t) for t in back])
+                    kept_off += len(gone)
                     stats[what] += 1
                     in_a_row = 0
                     if args.remove:
@@ -1100,6 +1128,8 @@ def cmd_write(args, cfg):
         et.close()
     log("")
     print(", ".join(f"{v} {k}" for k, v in stats.items() if v) or "nothing to do")
+    if kept_off:
+        print(f"{kept_off} Auto tags you removed by hand will stay removed.")
     if stats["missing"]:
         print("Some photos weren't found: is the drive connected?")
     print("In digiKam: reread metadata for these albums (see DIGIKAM.md for doing many folders at once).")
@@ -1325,11 +1355,15 @@ def cmd_html(args, cfg):
     if not rows:
         sys.exit("No tagged photos yet. Run scan, then tag.")
     out = Path(args.out).expanduser().resolve() if args.out else args.cache / "library.html"
+    removed = removed_by_hand(db)
+    root = cfg["root"] + "|"
     ids: dict[str, int] = {}
     photos = []
     for r in rows:
         tags = set()
         for t in json.loads(r["tags"]):
+            if root + t in removed.get(r["path"], ()):
+                continue
             parts = t.split("|")
             tags.update("|".join(parts[:i]) for i in range(1, len(parts) + 1))  # "Animals" matches "Animals|Dog"
         m = json.loads(r["meta"] or "{}")

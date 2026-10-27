@@ -224,20 +224,21 @@ run `tag` (no re-scan needed) and check it with `review`:
 ### Fixing a single photo by hand
 
 When phototag gets one photo wrong, say a coyote tagged *Auto › Animals › Farm
-animals*, fix it in digiKam with a tag of your own:
+animals*, fix it in digiKam:
 
-1. **Add the right tag outside `Auto`**, e.g. create your own *Animals › Coyote*
-   and assign it. phototag never touches tags outside `Auto`, so it stays.
-2. **Remove the wrong `Auto` tag** if you like (right-click it in the Tags panel).
-   This lasts until phototag next rewrites that photo's tags, which happens when
-   `tag` gives that photo a different set of tags, for example after you change
-   `tags.toml`. Then the `Auto` tags are reset to phototag's, and the wrong one
-   comes back.
+1. **Remove the wrong `Auto` tag** (right-click it in the Tags panel). It stays
+   removed: the next time `write` rewrites that photo, it sees the tag has gone,
+   remembers that, and leaves it off from then on. `write` reports how many such
+   tags it's keeping off, and the web page leaves them out too. To undo, assign
+   the tag again in digiKam; phototag then keeps it.
+2. **Add the right tag as your own, outside `Auto`**, e.g. create *Animals ›
+   Coyote* and assign it. phototag never touches tags outside `Auto`.
 
-Don't add corrections under `Auto` yourself: phototag replaces that branch when
-it rewrites a photo, so they would be lost. When the same mistake happens on
-many photos, fix the rule in `tags.toml` instead (a threshold, prompts or the
-animal list), then run `tag` and `write`.
+Don't add tags under `Auto` yourself: phototag manages that branch and drops
+tags there that it didn't write. Removals are seen only if digiKam writes your
+edits into the `.xmp` sidecars (see `DIGIKAM.md`, one-time setting 4). When the
+same mistake happens on many photos, fix the rule in `tags.toml` instead (a
+threshold, prompts or the animal list), then run `tag` and `write`.
 
 ## Browsing without digiKam
 
@@ -271,8 +272,7 @@ More detail, including bulk rereading across subfolders, is in `DIGIKAM.md`.
 3. Browse in the **Tags** view under `Auto`, or combine tags in the filter panel
    (e.g. *Scene › Landscape* AND *Color › Black and white*).
 
-To correct a single photo by hand, see "Fixing a single photo by hand" above:
-put corrections in your own tags, outside `Auto`.
+To correct a single photo by hand, see "Fixing a single photo by hand" above.
 
 ## First run and troubleshooting
 
