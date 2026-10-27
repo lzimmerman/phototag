@@ -187,7 +187,7 @@ def save_settings(d: dict):
 def main():
     try:
         import tkinter as tk
-        from tkinter import filedialog, ttk
+        from tkinter import filedialog, messagebox, ttk
         from tkinter import font as tkfont
         from tkinter.scrolledtext import ScrolledText
     except ImportError:
@@ -285,6 +285,7 @@ def main():
     bar.pack(side="left", fill="x", expand=True)
     stop_btn = ttk.Button(pf, text="Stop", state="disabled", command=lambda: stop())
     stop_btn.pack(side="left", padx=(8, 0))
+    ttk.Button(pf, text="Quit", command=lambda: quit_app()).pack(side="left", padx=(8, 0))
     status = ttk.Label(outer, text="Ready.", style="Note.TLabel")
     status.pack(fill="x")
     log = ScrolledText(outer, height=12, font=log_font, wrap="word")
@@ -460,6 +461,14 @@ def main():
             pass
         root.after(100, poll)
 
+    def quit_app():
+        """Quit button, Cmd-Q and the window's close button: ask first if a step is running."""
+        p = state["proc"]
+        if p and p.poll() is None and not messagebox.askyesno(
+                "Quit", "A step is still running. Stop it and quit?\n\nWork done so far is kept.", parent=root):
+            return
+        on_close()
+
     def on_close():
         p = state["proc"]
         if p and p.poll() is None:
@@ -470,7 +479,8 @@ def main():
                 p.kill()
         root.destroy()
 
-    root.protocol("WM_DELETE_WINDOW", on_close)
+    root.protocol("WM_DELETE_WINDOW", quit_app)
+    root.createcommand("tk::mac::Quit", quit_app)  # Cmd-Q and the app menu's Quit
     apply_look()
     refresh_tags()
     poll()

@@ -79,8 +79,8 @@ python phototag.py write
 
 `phototag_gui.py` puts the same steps in a small window: a folder picker,
 **Scan**, **Tag**, **Review**, **Write** and **Web page** buttons with a note under each
-saying what it does and how the last run went, a progress bar, a **Stop**
-button, and a log. Each button runs the same command you'd type in Terminal,
+saying what it does and how the last run went, a progress bar, **Stop** and
+**Quit** buttons, and a log. Each button runs the same command you'd type in Terminal,
 so everything above still applies.
 
 One-time setup: Tkinter, the toolkit it uses, needs one extra Homebrew package:
@@ -99,6 +99,8 @@ environment active. If macOS refuses to open `phototag.command`, run
 - **Only photos in the folder above** limits Write to the chosen folder,
   handy for writing one album and checking it in digiKam first.
 - **Stop** works like Ctrl-C: progress so far is saved.
+- **Quit** (or Cmd-Q, or closing the window) asks first if a step is still
+  running, then stops it the same way.
 - **Retry unreadable photos** (next to Scan) tries the photos an earlier scan
   couldn't read again, e.g. after reconnecting a drive or repairing files.
 - Under the progress bar, Scan and Write show how far they've got, the
