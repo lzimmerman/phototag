@@ -823,7 +823,7 @@ def species_prompt(name: str) -> str:
 # description lists in tags.toml where the scene model picks the closest match:
 # section -> (its table of description = tag, how a description becomes a prompt)
 MATCH_LISTS = {"animals": ("species", species_prompt), "birds": ("species", species_prompt),
-               "not_photo": ("kinds", str)}
+               "not_photo": ("kinds", str), "people": ("check", str)}
 
 
 def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
@@ -955,6 +955,12 @@ def cmd_tag(args, cfg):
                 if (pick := best_match(emb, sv, "not_photo", conf)) and pick[0]:
                     tags.append(pick[0])
                     scores[pick[0]] = round(pick[1], 4)
+            # the detector also "finds" people in flowers, or in a hand stroking a cat:
+            # keep People tags only when the scene model agrees it's a photo of people
+            if sv["people"] and any(t.startswith("People|") for t in found):
+                pick = best_match(emb, sv, "people", cfg["people"].get("check_min_confidence", 0.5))
+                if not pick or pick[0] != "People":
+                    found = [t for t in found if not t.startswith("People|")]
             # the detector found an animal, but only knows ten kinds: let the scene
             # model say which, when it's sure ("" in the list means no tag)
             if sv["animals"] and animal_tags & set(found) and (pick := best_match(emb, sv, "animals")):

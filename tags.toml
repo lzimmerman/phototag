@@ -229,6 +229,30 @@ min_area = 0.002           # ignore people smaller than this fraction of the fra
 portrait_area = 0.15       # 1-2 people and the largest covers this much => People|Portrait
 small_figure_area = 0.03   # largest person smaller than this => People|Small figures
 tag_none = false           # also tag photos with nobody in them as People|None
+# The detector also "finds" people in flowers, insects, or a hand stroking a cat.
+# People tags are kept only when the scene model rates the photo at least this
+# likely to be of people, against the other descriptions in [people.check].
+check_min_confidence = 0.5
+
+[people.check]
+"a photo of a person" = "People"
+"a photo of people" = "People"
+"a photo of a crowd" = "People"
+"a portrait of a person" = "People"
+"a photo of a person's hand" = "People"
+"a photo of people far away" = "People"
+"a photo of a person with a dog" = "People"
+"a photo of a flower" = ""
+"a photo of a plant" = ""
+"a photo of a dog" = ""
+"a photo of a cat" = ""
+"a photo of a bird" = ""
+"a photo of an insect" = ""
+"a photo of a building" = ""
+"a photo of a landscape" = ""
+"a photo of a statue" = ""
+"a photo of a mannequin" = ""
+"a photo of an object" = ""
 
 [objects]
 enabled = true

@@ -17,7 +17,7 @@ All tags go under one top-level tag, `Auto`, so they stay separate from your own
 | Camera, Lens, Focal length | Canon EOS R6, Wide, Telephoto… | EXIF |
 | Exposure | Long exposure, High ISO, Flash | EXIF |
 | Place | Country › Region › City | GPS, offline lookup |
-| People | One, Two, Group, Portrait, Small figures | YOLO detector (not on screenshots, memes or comics) |
+| People | One, Two, Group, Portrait, Small figures | YOLO detector, confirmed by the SigLIP image model (not on screenshots, memes or comics) |
 | Animals | Dog, Cat, Bird › Cardinal, Hawk, Egret…, Wild animals › Coyote, Squirrel…, Insects… | YOLO detector finds the animal; the SigLIP image model names it |
 | Vehicles | Car, Boat… | YOLO detector |
 | Scene, Subject, Style | Landscape, Coast and beach, Night, Flowers, Macro… | SigLIP image model (not on film negatives or non-photos) |
