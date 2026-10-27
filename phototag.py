@@ -783,16 +783,26 @@ def detection_tags(dets: list, cfg: dict) -> list[str]:
     return out
 
 
-def scene_vectors(db, cfg, model_ids: set[str], cache: Path):
-    """Averaged prompt embeddings per scene tag, cached so `tag` rarely needs the model."""
+ANIMAL_CLASSES = {"bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"}
+
+
+def species_prompt(name: str) -> str:
+    return f"a photo of {name}"
+
+
+def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
+    """Prompt embeddings for the scene tags and the [animals] species list, cached so
+    `tag` rarely needs the model."""
     scenes = cfg.get("scene", []) if cfg.get("scenes", {}).get("enabled", True) else []
-    if not scenes or not model_ids:
+    an = cfg.get("animals", {})
+    species = an.get("species", {}) if an.get("enabled", True) else {}
+    if not (scenes or species) or not model_ids:
         return None
     if len(model_ids) > 1:
         log(f"Photos were embedded with several models {sorted(model_ids)}; "
             "run `scan ROOT --rescan-ml` so they match. Using the most common one.")
     mid = db.execute("SELECT emb_model, COUNT(*) c FROM photos WHERE emb_model IS NOT NULL GROUP BY 1 ORDER BY c DESC").fetchone()[0]
-    prompts = sorted({p for s in scenes for p in s["prompts"]})
+    prompts = sorted({p for s in scenes for p in s["prompts"]} | {species_prompt(n) for n in species})
     have = {r["prompt"]: np.frombuffer(r["emb"], dtype=np.float32)
             for r in db.execute("SELECT prompt, emb FROM textcache WHERE model=?", (mid,))}
     kv = db.execute("SELECT v FROM kv WHERE k=?", (f"logit:{mid}",)).fetchone()
@@ -817,7 +827,23 @@ def scene_vectors(db, cfg, model_ids: set[str], cache: Path):
         mats.append(v / np.linalg.norm(v))
         names.append(s["tag"])
         ths.append(s.get("threshold", default))
-    return mid, names, np.stack(mats), np.array(ths), scale, bias
+    out = {"model": mid, "scale": scale, "bias": bias, "names": names, "ths": np.array(ths),
+           "mat": np.stack(mats) if mats else None, "species": None}
+    if species:
+        out["species"] = (list(species.values()),
+                          np.stack([have[species_prompt(n)] for n in species]),
+                          an.get("min_confidence", 0.8))
+    return out
+
+
+def which_animal(emb: np.ndarray, sv: dict) -> tuple[str, float] | None:
+    """The [animals] species tag the scene model is confident about, or None if unsure."""
+    tags, mat, min_conf = sv["species"]
+    logits = sv["scale"] * (mat @ emb)
+    pr = np.exp(logits - logits.max())
+    pr /= pr.sum()
+    best = int(pr.argmax())
+    return (tags[best], float(pr[best])) if pr[best] >= min_conf else None
 
 
 def geocode(rows, cfg) -> dict[str, dict]:
@@ -857,22 +883,30 @@ def cmd_tag(args, cfg):
         sys.exit("Nothing scanned yet. Run: python phototag.py scan /path/to/photos")
     sv = scene_vectors(db, cfg, {r["emb_model"] for r in rows if r["emb_model"]}, args.cache)
     places = geocode(rows, cfg)
+    classes = cfg.get("objects", {}).get("classes", {})
+    animal_tags = {classes[c] for c in ANIMAL_CLASSES if c in classes}
     counts: dict[str, int] = {}
     db.execute("DELETE FROM tags")
     for r in rows:
         tags = exif_tags(json.loads(r["meta"] or "{}"), cfg, places.get(r["path"]))
         tags += computed_tags(json.loads(r["stats"]), cfg)
-        if r["dets"] is not None:
-            tags += detection_tags(json.loads(r["dets"]), cfg)
+        found = detection_tags(json.loads(r["dets"]), cfg) if r["dets"] is not None else []
         scores = {}
-        if sv and r["emb"] is not None and r["emb_model"] == sv[0]:
-            mid, names, mat, ths, scale, bias = sv
+        if sv and r["emb"] is not None and r["emb_model"] == sv["model"]:
             emb = np.frombuffer(r["emb"], dtype=np.float16).astype(np.float32)
-            prob = 1 / (1 + np.exp(-(scale * (mat @ emb) + bias)))
-            for n, pr, th in zip(names, prob, ths):
-                scores[n] = round(float(pr), 4)
-                if pr >= th:
-                    tags.append(n)
+            if sv["mat"] is not None:
+                prob = 1 / (1 + np.exp(-(sv["scale"] * (sv["mat"] @ emb) + sv["bias"])))
+                for n, pr, th in zip(sv["names"], prob, sv["ths"]):
+                    scores[n] = round(float(pr), 4)
+                    if pr >= th:
+                        tags.append(n)
+            # the detector found an animal, but only knows ten kinds: let the scene
+            # model say which, when it's sure ("" in the list means no tag)
+            if sv["species"] and animal_tags & set(found) and (pick := which_animal(emb, sv)):
+                found = [t for t in found if t not in animal_tags] + ([pick[0]] if pick[0] else [])
+                if pick[0]:
+                    scores[pick[0]] = round(pick[1], 4)
+        tags += found
         tags = sorted(set(tags))
         for t in tags:
             counts[t] = counts.get(t, 0) + 1

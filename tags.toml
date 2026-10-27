@@ -51,6 +51,44 @@ negative_max_spread = 32        # ...that is nearly one colour (sunsets and flow
 negative_max_dark = 0.15        # share of near-black pixels: rules out moons and silhouettes.
                                 # Saved by Scan from Oct 2026; older scans skip this rule until rescanned.
 
+[animals]
+# The detector (YOLO, under [objects]) finds animals but only knows ten kinds, so it
+# calls a coyote a dog or a cow, and a squirrel a bear. When it finds an animal, the
+# scene model picks the closest match from this list instead, if it's at least
+# min_confidence sure (0-1); otherwise the detector's tag stays. Add any animal:
+# "a <description>" = "<tag>". "" means no tag (e.g. for drawings of animals).
+enabled = true
+min_confidence = 0.8
+
+[animals.species]
+"a coyote" = "Animals|Wild animals|Coyote"
+"a red fox" = "Animals|Wild animals|Fox"
+"a wolf" = "Animals|Wild animals|Wolf"
+"a deer" = "Animals|Wild animals|Deer"
+"a moose" = "Animals|Wild animals|Moose"
+"a bison" = "Animals|Wild animals|Bison"
+"a bear" = "Animals|Wild animals|Bear"
+"a raccoon" = "Animals|Wild animals|Raccoon"
+"a groundhog" = "Animals|Wild animals|Groundhog"
+"a squirrel" = "Animals|Wild animals|Squirrel"
+"a chipmunk" = "Animals|Wild animals|Chipmunk"
+"a rabbit" = "Animals|Wild animals|Rabbit"
+"a seal" = "Animals|Wild animals|Seal"
+"a whale" = "Animals|Wild animals|Whale"
+"a dog" = "Animals|Dog"
+"a cat" = "Animals|Cat"
+"a horse" = "Animals|Horse"
+"a cow" = "Animals|Farm animals|Cow"
+"a sheep" = "Animals|Farm animals|Sheep"
+"a goat" = "Animals|Farm animals|Goat"
+"a bird" = "Animals|Bird"
+"an insect" = "Animals|Insects"
+"a butterfly" = "Animals|Insects|Butterfly"
+"a lizard" = "Animals|Reptiles|Lizard"
+"a turtle" = "Animals|Reptiles|Turtle"
+"a frog" = "Animals|Frog"
+"a drawing or sign of an animal" = ""
+
 [light]
 enabled = true
 low_key_max = 0.22         # mean brightness (0-1) at or below => Low key

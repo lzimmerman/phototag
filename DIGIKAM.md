@@ -74,12 +74,23 @@ editing tags on the same photos in digiKam.
 
 ## Correcting tags
 
-- **Remove a wrong automatic tag** the normal way: right-click the photo, or use
-  the Tags panel in the right sidebar. phototag leaves it removed until its own
-  rules for that photo change.
+phototag owns everything under **Auto**. Each time it rewrites a photo's
+sidecar, which happens when `tag` gives that photo a different set of tags, the
+Auto branch is reset to phototag's tags. Tags outside Auto are never touched.
+
+- **Fix one photo with your own tag.** Example: a coyote tagged *Auto › Animals ›
+  Farm animals*. Create your own tag *Animals › Coyote* (outside Auto) and assign
+  it; it stays whatever phototag does later.
+- **Removing a wrong Auto tag** (right-click it in the Tags panel) works, but
+  only until phototag next rewrites that photo, e.g. after you change
+  `tags.toml`. Then the wrong tag comes back. Your own tag from the step above
+  is the lasting fix.
+- **Don't add or rename tags under Auto by hand:** they're lost when phototag
+  rewrites the photo.
 - **A tag that's wrong across many photos** is better fixed in phototag. Raise
-  its threshold or reword its prompts in `tags.toml`, then run `tag` and `write`
-  and reread in digiKam.
+  its threshold, reword its prompts or extend the animal list in `tags.toml`
+  (see "Naming animals" in the README), then run `tag` and `write`, and reread
+  in digiKam.
 
 ## Removing automatic tags entirely
 

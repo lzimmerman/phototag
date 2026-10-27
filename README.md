@@ -18,7 +18,8 @@ All tags go under one top-level tag, `Auto`, so they stay separate from your own
 | Exposure | Long exposure, High ISO, Flash | EXIF |
 | Place | Country › Region › City | GPS, offline lookup |
 | People | One, Two, Group, Portrait, Small figures | YOLO detector |
-| Animals, Vehicles | Dog, Bird, Car, Boat… | YOLO detector |
+| Animals | Dog, Cat, Bird, Wild animals › Coyote, Squirrel…, Insects… | YOLO detector finds the animal; the SigLIP image model names it |
+| Vehicles | Car, Boat… | YOLO detector |
 | Scene, Subject, Style | Landscape, Mountains, Night, Food, Macro, Silhouette… | SigLIP image model |
 | Astro | Moon, Night sky, Aurora, Lunar eclipse | SigLIP image model |
 | Film | Negative (scanned colour and B&W film negatives) | SigLIP image model, plus colour statistics for orange colour negatives |
@@ -188,6 +189,56 @@ Practical points:
 - To see why one photo did or didn't get a tag, run `explain` on it: it shows
   all of that photo's scene scores at once.
 
+### Naming animals
+
+The detector (YOLO) finds animals but only knows ten kinds, so on its own it
+calls a coyote a dog or a cow, and a squirrel a bear. When it finds an animal,
+the scene model picks the closest match from the list in `[animals.species]` in
+`tags.toml` instead, if it's at least 80% sure (`min_confidence`). Otherwise
+the detector's tag stays.
+
+To add an animal you photograph, add a line `"a <description>" = "<tag>"`, then
+run `tag` (no re-scan needed) and check it with `review`:
+
+```toml
+[animals.species]
+"a coyote" = "Animals|Wild animals|Coyote"     # already in the list
+"an opossum" = "Animals|Wild animals|Opossum"
+"a great blue heron" = "Animals|Bird|Heron"
+"a red-tailed hawk" = "Animals|Bird|Hawk"
+"a monarch butterfly" = "Animals|Insects|Butterfly|Monarch"
+"a drawing or sign of an animal" = ""         # "" = no tag at all
+```
+
+- Describe it the way you'd caption a photo of it: `"a great blue heron"`, not
+  just `"heron"`.
+- Each photo gets only the single best match. A heron fits both `"a great blue
+  heron"` and `"a bird"`, so the two share the confidence; if neither reaches
+  `min_confidence`, the detector's tag (Bird) stays. After adding entries, check
+  them with `review` (e.g. `review "Animals|Bird"`), and keep the general
+  entries as a fallback.
+- `min_confidence = 0.8` is a balance. On a test library, lowering it to 0.7
+  caught one more coyote but also tagged dandelions as insects. Raise it if you
+  see wrong animals; lower it if too many keep the detector's guess.
+
+### Fixing a single photo by hand
+
+When phototag gets one photo wrong, say a coyote tagged *Auto › Animals › Farm
+animals*, fix it in digiKam with a tag of your own:
+
+1. **Add the right tag outside `Auto`**, e.g. create your own *Animals › Coyote*
+   and assign it. phototag never touches tags outside `Auto`, so it stays.
+2. **Remove the wrong `Auto` tag** if you like (right-click it in the Tags panel).
+   This lasts until phototag next rewrites that photo's tags, which happens when
+   `tag` gives that photo a different set of tags, for example after you change
+   `tags.toml`. Then the `Auto` tags are reset to phototag's, and the wrong one
+   comes back.
+
+Don't add corrections under `Auto` yourself: phototag replaces that branch when
+it rewrites a photo, so they would be lost. When the same mistake happens on
+many photos, fix the rule in `tags.toml` instead (a threshold, prompts or the
+animal list), then run `tag` and `write`.
+
 ## Browsing without digiKam
 
 `python phototag.py html` (or **5. Web page** in the window) makes one web page
@@ -220,8 +271,8 @@ More detail, including bulk rereading across subfolders, is in `DIGIKAM.md`.
 3. Browse in the **Tags** view under `Auto`, or combine tags in the filter panel
    (e.g. *Scene › Landscape* AND *Color › Black and white*).
 
-If you remove an automatic tag by hand in digiKam, phototag leaves it removed
-until its own rules for that photo change.
+To correct a single photo by hand, see "Fixing a single photo by hand" above:
+put corrections in your own tags, outside `Auto`.
 
 ## First run and troubleshooting
 
@@ -297,6 +348,7 @@ If something else breaks, the full error text is what's needed to fix it.
 
 ## Notes and limits
 
+
 - **Film|Negative** combines a scene tag (which finds black-and-white negatives
   and film strips) with a colour rule for orange colour negatives, in `[film]` in
   `tags.toml`. The colour rule needs a reading Scan saves from October 2026 on,
@@ -315,6 +367,6 @@ If something else breaks, the full error text is what's needed to fix it.
   `style = "lightroom"` in `tags.toml` and the matching sidecar naming option in digiKam.
 - The cache (database + small thumbnails) lives in `~/.phototag`. Deleting it just
   means the next scan starts over.
-- `phototag README.pdf` is a printable copy of this file. After editing
-  `README.md`, run `./make_readme_pdf.sh` to rebuild it (needs `brew install
-  pandoc` and Google Chrome).
+- `phototag README.pdf` and `phototag with digiKam.pdf` are printable copies of
+  this file and `DIGIKAM.md`. After editing either one, run `./make_readme_pdf.sh`
+  to rebuild both (needs `brew install pandoc` and Google Chrome).

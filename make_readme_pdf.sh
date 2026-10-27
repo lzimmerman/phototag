@@ -1,9 +1,11 @@
 #!/bin/sh
-# Rebuild "phototag README.pdf" from README.md. Run it after editing the README:
+# Rebuild the printable copies of the docs after editing them:
+#   README.md  -> "phototag README.pdf"
+#   DIGIKAM.md -> "phototag with digiKam.pdf"
 #
 #     ./make_readme_pdf.sh
 #
-# Needs pandoc (brew install pandoc) and Google Chrome, which prints the PDF.
+# Needs pandoc (brew install pandoc) and Google Chrome, which prints the PDFs.
 set -e
 cd "$(dirname "$0")"
 
@@ -14,9 +16,13 @@ command -v pandoc >/dev/null || { echo "pandoc is missing: brew install pandoc" 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-cat > "$tmp/readme.css" <<'EOF'
+# build MARKDOWN PDF TITLE: TITLE also appears in the page footer
+build() {
+    cat > "$tmp/doc.css" <<EOF
 @page { size: letter; margin: 0.75in 0.85in 0.6in;
-  @bottom-center { content: "phototag README · " counter(page) "/" counter(pages); font: 8pt Helvetica, sans-serif; color: #222; } }
+  @bottom-center { content: "$3 · " counter(page) "/" counter(pages); font: 8pt Helvetica, sans-serif; color: #222; } }
+EOF
+    cat >> "$tmp/doc.css" <<'EOF'
 body { font-family: "DejaVu Sans", Verdana, sans-serif; font-size: 10.5pt; line-height: 1.5; color: #222; }
 h1 { font-size: 24pt; border-bottom: 2px solid #222; padding-bottom: 6px; margin-top: 0.3in; }
 h2 { font-size: 15pt; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-top: 1.4em; }
@@ -30,11 +36,15 @@ th, td { border: 1px solid #ccc; padding: 5px 8px; text-align: left; vertical-al
 th { background: #eee; }
 tr { break-inside: avoid; }
 EOF
+    rm -f "$tmp/doc.pdf"
+    pandoc -f gfm "$1" -s --syntax-highlighting=none --metadata pagetitle="$3" \
+        --css "$tmp/doc.css" --embed-resources -o "$tmp/doc.html"
+    "$CHROME" --headless --disable-gpu --no-pdf-header-footer \
+        --print-to-pdf="$tmp/doc.pdf" "file://$tmp/doc.html" >/dev/null 2>&1 || true   # can exit non-zero on shutdown after writing
+    [ -s "$tmp/doc.pdf" ] || { echo "Chrome didn't produce a PDF for $1" >&2; exit 1; }
+    mv "$tmp/doc.pdf" "$2"
+    echo "wrote $2"
+}
 
-pandoc -f gfm README.md -s --syntax-highlighting=none --metadata pagetitle="phototag README" \
-    --css "$tmp/readme.css" --embed-resources -o "$tmp/readme.html"
-"$CHROME" --headless --disable-gpu --no-pdf-header-footer \
-    --print-to-pdf="$tmp/readme.pdf" "file://$tmp/readme.html" >/dev/null 2>&1 || true   # can exit non-zero on shutdown after writing
-[ -s "$tmp/readme.pdf" ] || { echo "Chrome didn't produce a PDF" >&2; exit 1; }
-mv "$tmp/readme.pdf" "phototag README.pdf"
-echo "wrote phototag README.pdf"
+build README.md "phototag README.pdf" "phototag README"
+build DIGIKAM.md "phototag with digiKam.pdf" "phototag with digiKam"
