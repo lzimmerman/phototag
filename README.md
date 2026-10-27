@@ -250,3 +250,6 @@ If something else breaks, the full error text is what's needed to fix it.
   `style = "lightroom"` in `tags.toml` and the matching sidecar naming option in digiKam.
 - The cache (database + small thumbnails) lives in `~/.phototag`. Deleting it just
   means the next scan starts over.
+- `phototag README.pdf` is a printable copy of this file. After editing
+  `README.md`, run `./make_readme_pdf.sh` to rebuild it (needs `brew install
+  pandoc` and Google Chrome).
