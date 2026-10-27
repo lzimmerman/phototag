@@ -191,7 +191,7 @@ time_of_day_starts = [[0, "Night"], [5, "Morning"], [11, "Midday"], [14, "Aftern
 
 [people]
 enabled = true
-min_conf = 0.45            # detector confidence
+min_conf = 0.65            # detector confidence; lower lets in flowers, comics and empty scenes
 min_area = 0.002           # ignore people smaller than this fraction of the frame
 portrait_area = 0.15       # 1-2 people and the largest covers this much => People|Portrait
 small_figure_area = 0.03   # largest person smaller than this => People|Small figures
@@ -233,83 +233,117 @@ airplane = "Vehicles|Aircraft"
 
 [scenes]
 enabled = true
-default_threshold = 0.10
+# SigLIP's scores for broad prompts are small, so useful thresholds are too:
+# the ones below were set from contact sheets of a 29,000-photo library, at the
+# point where photos stop matching. Check yours with `review "<tag>"`.
+default_threshold = 0.005
+# photos with any of these tags get no detector tags (people, animals, vehicles):
+# the detector finds "people" in profile pictures, cartoons and headlines
+no_detections_with = ["Screenshot"]
+# photos with any of these tags get no Scene, Subject or Style tags: a negative's
+# inverted colours look like city streets, buildings and rooms to the model
+no_scenes_with = ["Film|Negative"]
 
 [[scene]]
 tag = "Scene|Landscape"
 prompts = ["a landscape photograph", "a scenic view of nature", "wide open countryside scenery"]
+threshold = 0.002
 
 [[scene]]
 tag = "Scene|Mountains"
 prompts = ["a photo of mountains", "a mountain range", "rocky alpine peaks"]
+threshold = 0.01
 
 [[scene]]
 tag = "Scene|Coast and beach"
 prompts = ["a photo of a beach", "the sea coast", "ocean waves on the shore"]
+threshold = 0.005
 
 [[scene]]
 tag = "Scene|Lakes and rivers"
 prompts = ["a photo of a lake", "a river flowing through the land", "a waterfall"]
+threshold = 0.003
 
 [[scene]]
 tag = "Scene|Forest"
 prompts = ["a photo of a forest", "trees in the woods", "a path through woodland"]
+threshold = 0.008
 
 [[scene]]
 tag = "Scene|Snow"
 prompts = ["a snowy winter scene", "snow covered ground", "people in the snow"]
+threshold = 0.008
 
 [[scene]]
 tag = "Scene|Sky and clouds"
 prompts = ["a photo of dramatic clouds in the sky", "a big open sky", "storm clouds"]
+threshold = 0.01
 
 [[scene]]
 tag = "Scene|Sunset and sunrise"
 prompts = ["a photo of a sunset", "a sunrise over the horizon", "golden evening light at dusk"]
+threshold = 0.02
 
 [[scene]]
 tag = "Scene|Night"
 prompts = ["a photo taken at night", "city lights at night", "a starry night sky"]
+threshold = 0.01
 
 [[scene]]
 tag = "Scene|City and street"
 prompts = ["a city street", "street photography in a town", "an urban cityscape"]
+threshold = 0.008
 
 [[scene]]
 tag = "Scene|Architecture"
 prompts = ["a photo of a building's architecture", "the facade of a historic building", "a church or cathedral"]
+threshold = 0.008
 
 [[scene]]
 tag = "Scene|Indoors"
 prompts = ["a photo taken indoors", "the inside of a room", "an interior of a house"]
+threshold = 0.005
 
 [[scene]]
 tag = "Subject|Flowers and plants"
 prompts = ["a close-up photo of flowers", "a garden with plants", "a single flower"]
+threshold = 0.002
 
 [[scene]]
 tag = "Subject|Food and drink"
 prompts = ["a photo of food on a plate", "a meal on a table", "a drink in a glass"]
+threshold = 0.0005
 
 [[scene]]
 tag = "Subject|Wildlife"
 prompts = ["a photo of a wild animal in nature", "wildlife photography", "a bird in the wild"]
+threshold = 0.003
 
 [[scene]]
 tag = "Style|Macro and close-up"
 prompts = ["a macro photograph", "an extreme close-up of a small object", "a close-up of an insect"]
+threshold = 0.006
 
 [[scene]]
 tag = "Style|Silhouette"
 prompts = ["a silhouette against the sky", "a dark silhouette of a person against bright light"]
+threshold = 1.0   # off: no reliable matches on a test library
 
 [[scene]]
 tag = "Style|Minimal"
 prompts = ["a minimalist photograph", "a simple composition with lots of empty space"]
+threshold = 0.02
 
 [[scene]]
 tag = "Style|Aerial"
 prompts = ["an aerial photograph", "a view from an airplane window", "a drone shot looking down"]
+threshold = 1.0   # off: no reliable matches on a test library
+
+[[scene]]
+tag = "Screenshot"
+prompts = ["a screenshot of a social media post", "a screenshot of a phone screen",
+           "a screenshot of a news article", "a meme with text"]
+threshold = 0.001   # also catches saved memes and comics
 
 [[scene]]
 tag = "Film|Negative"

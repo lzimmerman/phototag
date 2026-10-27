@@ -25,11 +25,13 @@ import io
 import json
 import math
 import os
+import re
 import shutil
 import signal
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import tomllib
@@ -41,7 +43,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image, ImageFile, ImageOps
 
 Image.MAX_IMAGE_PIXELS = None  # big panoramas and scans are fine
 
@@ -212,6 +214,9 @@ _TRANSPOSE = {
 }
 
 
+ImageFile.LOAD_TRUNCATED_IMAGES = True  # a file cut short a few bytes from the end still tags fine
+
+
 def to_rgb(im: Image.Image) -> Image.Image:
     if im.mode in ("I;16", "I;16B", "I;16L", "I"):  # 16-bit greyscale scans
         a = np.asarray(im).astype(np.float32)
@@ -277,13 +282,22 @@ def _jpeg_side(data: bytes) -> int:
 
 
 def develop_raw(path: Path) -> Image.Image | None:
-    """Last resort for RAWs without a usable preview (needs `pip install rawpy`)."""
+    """Last resort for RAWs without a usable preview, such as some phones' DNGs: rawpy
+    if it's installed, otherwise macOS's own RAW support via `sips`."""
     try:
         import rawpy
     except ImportError:
+        rawpy = None
+    if rawpy:
+        with rawpy.imread(str(path)) as r:
+            return Image.fromarray(r.postprocess(half_size=True, use_camera_wb=True))
+    if not shutil.which("sips"):
         return None
-    with rawpy.imread(str(path)) as r:
-        return Image.fromarray(r.postprocess(half_size=True, use_camera_wb=True))
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "developed.jpg"
+        subprocess.run(["sips", "-s", "format", "jpeg", "-Z", "1024", str(path), "--out", str(out)],
+                       capture_output=True, timeout=120)
+        return open_oriented(out) if out.exists() else None  # sips leaves the rotation in EXIF
 
 
 def image_stats(im: Image.Image) -> dict:
@@ -507,7 +521,7 @@ def cmd_scan(args, cfg):
                 else:
                     im = develop_raw(p)  # rawpy applies the orientation itself
                     if im is None:
-                        raise ValueError("no embedded preview (pip install rawpy to develop it instead)")
+                        raise ValueError("no embedded preview, and it couldn't be developed")
                     im = to_rgb(im)
                     im.thumbnail((1024, 1024))
             else:
@@ -644,17 +658,32 @@ def camera_name(meta: dict) -> str | None:
     for junk in (" CORPORATION", " Corporation", " IMAGING CORP.", " OPTICAL CO.,LTD", " Co., Ltd.", " CO.,LTD."):
         make = make.replace(junk, "")
     first = make.split(" ")[0] if make else ""
+    first = MAKE_PREFIX.get(first, first)
     if first and not model.lower().startswith(first.lower()):
-        model = f"{first.title() if first.isupper() and len(first) > 3 else first} {model}"
+        model = f"{first} {model}"
     return clean(model)
 
 
+# a make's short name as its own model names spell it, so "D780" and "NIKON D780"
+# from different software end up as the same camera
+MAKE_PREFIX = {"LGE": "LG", "Nikon": "NIKON", "Canon": "Canon", "CANON": "Canon"}
+
+
 def lens_name(meta: dict) -> str | None:
+    guess = None
     for k in ("LensID", "LensModel", "Lens"):
         v = str(meta.get(k) or "").strip()
-        if v and not v.lower().startswith("unknown") and not v.replace(".", "").replace(" ", "").isdigit() and v != "----":
-            return clean(v)
-    return None
+        if (not v or v.lower().startswith("unknown") or v.replace(".", "").replace(" ", "").isdigit()
+                or v == "----" or re.match(r"0(\.0)? ?mm", v)):  # "0mm f/0": a manual lens
+            continue
+        if " or " in v:  # exiftool couldn't tell between several lenses
+            alts = v.split(" or ")
+            if all(a.startswith(alts[-1]) for a in alts) or all(a.startswith(alts[0]) for a in alts):
+                return clean(min(alts, key=len))  # "X VR or X": the part they share
+            guess = guess or alts[0]
+            continue
+        return clean(v)
+    return clean(guess) if guess else None
 
 
 def clean(s: str) -> str:
@@ -917,6 +946,10 @@ def cmd_tag(args, cfg):
             if sv["birds"] and bird in found and (pick := which_animal(emb, sv, "birds")):
                 found = [t for t in found if t != bird] + ([pick[0]] if pick[0] else [bird])
                 scores[pick[0] or bird] = round(pick[1], 4)
+        if set(cfg.get("scenes", {}).get("no_scenes_with", [])) & set(tags):
+            tags = [t for t in tags if t.split("|")[0] not in ("Scene", "Subject", "Style")]
+        if set(cfg.get("scenes", {}).get("no_detections_with", [])) & set(tags):
+            found = []  # e.g. screenshots: the "people" are profile pictures and cartoons
         tags += found
         tags = sorted(set(tags))
         for t in tags:

@@ -17,10 +17,11 @@ All tags go under one top-level tag, `Auto`, so they stay separate from your own
 | Camera, Lens, Focal length | Canon EOS R6, Wide, Telephoto… | EXIF |
 | Exposure | Long exposure, High ISO, Flash | EXIF |
 | Place | Country › Region › City | GPS, offline lookup |
-| People | One, Two, Group, Portrait, Small figures | YOLO detector |
+| People | One, Two, Group, Portrait, Small figures | YOLO detector (not on screenshots) |
 | Animals | Dog, Cat, Bird › Cardinal, Hawk, Egret…, Wild animals › Coyote, Squirrel…, Insects… | YOLO detector finds the animal; the SigLIP image model names it |
 | Vehicles | Car, Boat… | YOLO detector |
-| Scene, Subject, Style | Landscape, Mountains, Night, Food, Macro, Silhouette… | SigLIP image model |
+| Scene, Subject, Style | Landscape, Coast and beach, Night, Flowers, Macro… | SigLIP image model (not on film negatives) |
+| Screenshot | screenshots, saved memes and comics | SigLIP image model |
 | Astro | Moon, Night sky, Aurora, Lunar eclipse | SigLIP image model |
 | Film | Negative (scanned colour and B&W film negatives) | SigLIP image model, plus colour statistics for orange colour negatives |
 
@@ -162,15 +163,21 @@ because each subtag has its own threshold; review a single scene tag to tune one
 - **Right and wrong photos mixed all the way down:** a threshold won't fix
   that. Reword the tag's prompts or add new ones.
 
-Set a threshold by adding a line such as `threshold = 0.15` to that tag's
-`[[scene]]` entry (otherwise `default_threshold` applies):
+Set a threshold with the `threshold` line in that tag's `[[scene]]` entry
+(otherwise `default_threshold` applies):
 
 ```toml
 [[scene]]
 tag = "Scene|Landscape"
 prompts = ["a landscape photograph", "a scenic view of nature", "wide open countryside scenery"]
-threshold = 0.15
+threshold = 0.002
 ```
+
+Scores for broad tags like Landscape are small: on a 29,000-photo library the
+best landscapes scored about 0.03 and the useful cutoff was 0.002. Specific
+tags (Moon, Film negative) score much higher. The thresholds in `tags.toml`
+were set from contact sheets of that library; Silhouette and Aerial found
+nothing reliable there, so they're switched off with `threshold = 1.0`.
 
 A changed threshold shows up in `review` straight away, because the page reads
 it from the config. Changed prompts need a `tag` run first, because that's when
