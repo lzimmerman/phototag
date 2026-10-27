@@ -820,12 +820,18 @@ def species_prompt(name: str) -> str:
     return f"a photo of {name}"
 
 
+# description lists in tags.toml where the scene model picks the closest match:
+# section -> (its table of description = tag, how a description becomes a prompt)
+MATCH_LISTS = {"animals": ("species", species_prompt), "birds": ("species", species_prompt),
+               "not_photo": ("kinds", str)}
+
+
 def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
-    """Prompt embeddings for the scene tags and the [animals] and [birds] species
-    lists, cached so `tag` rarely needs the model."""
+    """Prompt embeddings for the scene tags and the MATCH_LISTS ([animals], [birds],
+    [not_photo]), cached so `tag` rarely needs the model."""
     scenes = cfg.get("scene", []) if cfg.get("scenes", {}).get("enabled", True) else []
-    lists = {k: cfg.get(k, {}) for k in ("animals", "birds")}
-    lists = {k: c for k, c in lists.items() if c.get("enabled", True) and c.get("species")}
+    lists = {k: cfg.get(k, {}) for k in MATCH_LISTS}
+    lists = {k: c for k, c in lists.items() if c.get("enabled", True) and c.get(MATCH_LISTS[k][0])}
     if not (scenes or lists) or not model_ids:
         return None
     if len(model_ids) > 1:
@@ -833,7 +839,7 @@ def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
             "run `scan ROOT --rescan-ml` so they match. Using the most common one.")
     mid = db.execute("SELECT emb_model, COUNT(*) c FROM photos WHERE emb_model IS NOT NULL GROUP BY 1 ORDER BY c DESC").fetchone()[0]
     prompts = sorted({p for s in scenes for p in s["prompts"]}
-                     | {species_prompt(n) for c in lists.values() for n in c["species"]})
+                     | {MATCH_LISTS[k][1](n) for k, c in lists.items() for n in c[MATCH_LISTS[k][0]]})
     have = {r["prompt"]: np.frombuffer(r["emb"], dtype=np.float32)
             for r in db.execute("SELECT prompt, emb FROM textcache WHERE model=?", (mid,))}
     kv = db.execute("SELECT v FROM kv WHERE k=?", (f"logit:{mid}",)).fetchone()
@@ -860,17 +866,18 @@ def scene_vectors(db, cfg, model_ids: set[str], cache: Path) -> dict | None:
         ths.append(s.get("threshold", default))
     out = {"model": mid, "scale": scale, "bias": bias, "names": names, "ths": np.array(ths),
            "mat": np.stack(mats) if mats else None}
-    for k in ("animals", "birds"):
+    for k, (table, prompt) in MATCH_LISTS.items():
         c = lists.get(k)
-        out[k] = (list(c["species"].values()), np.stack([have[species_prompt(n)] for n in c["species"]]),
+        out[k] = (list(c[table].values()), np.stack([have[prompt(n)] for n in c[table]]),
                   c.get("min_confidence", 0.8)) if c else None
     return out
 
 
-def which_animal(emb: np.ndarray, sv: dict, key="animals") -> tuple[str, float] | None:
-    """The tag from the [animals] (or [birds]) list that the scene model is confident
-    about, or None if unsure."""
-    tags, mat, min_conf = sv[key]
+def best_match(emb: np.ndarray, sv: dict, key: str, min_conf: float | None = None) -> tuple[str, float] | None:
+    """The tag from a MATCH_LISTS list that the scene model is confident about, or
+    None if unsure."""
+    tags, mat, default_conf = sv[key]
+    min_conf = default_conf if min_conf is None else min_conf
     logits = sv["scale"] * (mat @ emb)
     pr = np.exp(logits - logits.max())
     pr /= pr.sum()
@@ -911,6 +918,11 @@ def geocode(rows, cfg) -> dict[str, dict]:
     return {p: {"country": country(r["cc"]), "region": r.get("admin1"), "city": r.get("name")} for p, r in zip(paths, res)}
 
 
+def has_any(tags: list[str], wanted: list[str]) -> bool:
+    """Whether any tag is one of `wanted` or under one of them."""
+    return any(t == w or t.startswith(w + "|") for t in tags for w in wanted)
+
+
 def cmd_tag(args, cfg):
     db = open_db(args.cache)
     rows = db.execute("SELECT path, meta, stats, dets, emb, emb_model FROM photos WHERE error IS NULL").fetchall()
@@ -935,20 +947,28 @@ def cmd_tag(args, cfg):
                     scores[n] = round(float(pr), 4)
                     if pr >= th:
                         tags.append(n)
+            # screenshots, memes and comics: a lower bar when no camera is recorded
+            if sv["not_photo"]:
+                npc = cfg.get("not_photo", {})
+                camera = any(t.startswith("Camera|") for t in tags)
+                conf = npc.get("min_confidence", 0.9) if camera else npc.get("min_confidence_no_camera", 0.4)
+                if (pick := best_match(emb, sv, "not_photo", conf)) and pick[0]:
+                    tags.append(pick[0])
+                    scores[pick[0]] = round(pick[1], 4)
             # the detector found an animal, but only knows ten kinds: let the scene
             # model say which, when it's sure ("" in the list means no tag)
-            if sv["animals"] and animal_tags & set(found) and (pick := which_animal(emb, sv)):
+            if sv["animals"] and animal_tags & set(found) and (pick := best_match(emb, sv, "animals")):
                 found = [t for t in found if t not in animal_tags] + ([pick[0]] if pick[0] else [])
                 if pick[0]:
                     scores[pick[0]] = round(pick[1], 4)
             # then which bird, for photos tagged Bird
             bird = cfg.get("birds", {}).get("tag", "Animals|Bird")
-            if sv["birds"] and bird in found and (pick := which_animal(emb, sv, "birds")):
+            if sv["birds"] and bird in found and (pick := best_match(emb, sv, "birds")):
                 found = [t for t in found if t != bird] + ([pick[0]] if pick[0] else [bird])
                 scores[pick[0] or bird] = round(pick[1], 4)
-        if set(cfg.get("scenes", {}).get("no_scenes_with", [])) & set(tags):
+        if has_any(tags, cfg.get("scenes", {}).get("no_scenes_with", [])):
             tags = [t for t in tags if t.split("|")[0] not in ("Scene", "Subject", "Style")]
-        if set(cfg.get("scenes", {}).get("no_detections_with", [])) & set(tags):
+        if has_any(tags, cfg.get("scenes", {}).get("no_detections_with", [])):
             found = []  # e.g. screenshots: the "people" are profile pictures and cartoons
         tags += found
         tags = sorted(set(tags))

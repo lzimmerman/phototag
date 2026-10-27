@@ -17,11 +17,11 @@ All tags go under one top-level tag, `Auto`, so they stay separate from your own
 | Camera, Lens, Focal length | Canon EOS R6, Wide, Telephoto… | EXIF |
 | Exposure | Long exposure, High ISO, Flash | EXIF |
 | Place | Country › Region › City | GPS, offline lookup |
-| People | One, Two, Group, Portrait, Small figures | YOLO detector (not on screenshots) |
+| People | One, Two, Group, Portrait, Small figures | YOLO detector (not on screenshots, memes or comics) |
 | Animals | Dog, Cat, Bird › Cardinal, Hawk, Egret…, Wild animals › Coyote, Squirrel…, Insects… | YOLO detector finds the animal; the SigLIP image model names it |
 | Vehicles | Car, Boat… | YOLO detector |
-| Scene, Subject, Style | Landscape, Coast and beach, Night, Flowers, Macro… | SigLIP image model (not on film negatives) |
-| Screenshot | screenshots, saved memes and comics | SigLIP image model |
+| Scene, Subject, Style | Landscape, Coast and beach, Night, Flowers, Macro… | SigLIP image model (not on film negatives or non-photos) |
+| Not a photo | Screenshot, Meme, Comic | SigLIP image model; less evidence needed when no camera is recorded |
 | Astro | Moon, Night sky, Aurora, Lunar eclipse | SigLIP image model |
 | Film | Negative (scanned colour and B&W film negatives) | SigLIP image model, plus colour statistics for orange colour negatives |
 
@@ -243,6 +243,24 @@ about 1,200 bird photos, roughly 60% got a species. Most were right, but the
 model can't really tell a crow from a raven or one small shorebird from
 another, and it calls a young night heron a shorebird. Distant, backlit or
 dark birds mostly stay plain *Bird*. Check with `review "Animals|Bird"`.
+
+### Screenshots, memes and comics
+
+Images saved alongside your photos get *Not a photo › Screenshot*, *Meme* or
+*Comic*, from the `[not_photo]` list in `tags.toml`. It works like the animal
+list, but some of its descriptions are of ordinary photos ("a photograph", "a
+photo of a sign") and mean no tag, so an image is only tagged when a non-photo
+description wins clearly. An image with no camera in its metadata needs 40%
+confidence (`min_confidence_no_camera`); one with a camera needs 90%.
+
+On a test library this found about 1,800 images. The line between a meme and a
+screenshot of a joke tweet is fuzzy, and a few phone photos without camera
+information slip in (letter tiles, a framed picture). If a kind of photo keeps
+getting caught, add a line describing it with `""`, e.g.
+`"a photo of a board game" = ""`.
+
+Non-photos get no People, Animals or Vehicles tags (the detector finds people in
+profile pictures and cartoons) and no Scene, Subject or Style tags.
 
 ### Fixing a single photo by hand
 

@@ -150,6 +150,39 @@ min_confidence = 0.8
 "a wild turkey" = "Animals|Bird|Wild turkey"
 "a chicken" = "Animals|Farm animals|Chicken"
 
+[not_photo]
+# Screenshots, memes and comics saved alongside your photos. The scene model
+# picks the closest description below; ones mapped to "" describe ordinary
+# photos and mean no tag. Images that record no camera are usually not photos,
+# so they need less confidence.
+enabled = true
+min_confidence = 0.9
+min_confidence_no_camera = 0.4
+
+[not_photo.kinds]
+"a screenshot of a social media post" = "Not a photo|Screenshot"
+"a screenshot of a phone screen" = "Not a photo|Screenshot"
+"a screenshot of a news article" = "Not a photo|Screenshot"
+"a screenshot of a text message conversation" = "Not a photo|Screenshot"
+"a meme with text" = "Not a photo|Meme"
+"an image macro meme with a caption" = "Not a photo|Meme"
+"a poster or graphic design with text" = "Not a photo|Meme"
+"a comic strip" = "Not a photo|Comic"
+"a cartoon drawing" = "Not a photo|Comic"
+"a digital illustration" = "Not a photo|Comic"
+"a photograph" = ""
+"a photo of nature" = ""
+"a photo of a person" = ""
+"a photo of an animal" = ""
+"a photo of food" = ""
+"a photo of the night sky" = ""
+"a dark underexposed photo" = ""
+"a blurry photo" = ""
+"a photo of a building" = ""
+"a scanned film negative" = ""
+"a photo of a sign" = ""
+"a photo of a protest with signs" = ""
+
 [light]
 enabled = true
 low_key_max = 0.22         # mean brightness (0-1) at or below => Low key
@@ -239,10 +272,10 @@ enabled = true
 default_threshold = 0.005
 # photos with any of these tags get no detector tags (people, animals, vehicles):
 # the detector finds "people" in profile pictures, cartoons and headlines
-no_detections_with = ["Screenshot"]
+no_detections_with = ["Not a photo"]
 # photos with any of these tags get no Scene, Subject or Style tags: a negative's
 # inverted colours look like city streets, buildings and rooms to the model
-no_scenes_with = ["Film|Negative"]
+no_scenes_with = ["Film|Negative", "Not a photo"]
 
 [[scene]]
 tag = "Scene|Landscape"
@@ -338,12 +371,6 @@ threshold = 0.02
 tag = "Style|Aerial"
 prompts = ["an aerial photograph", "a view from an airplane window", "a drone shot looking down"]
 threshold = 1.0   # off: no reliable matches on a test library
-
-[[scene]]
-tag = "Screenshot"
-prompts = ["a screenshot of a social media post", "a screenshot of a phone screen",
-           "a screenshot of a news article", "a meme with text"]
-threshold = 0.001   # also catches saved memes and comics
 
 [[scene]]
 tag = "Film|Negative"
