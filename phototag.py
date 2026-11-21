@@ -7,7 +7,7 @@ object detection, a SigLIP image embedding), caches the results in SQLite,
 derives tags from the rules in tags.toml, and writes them as hierarchical
 keywords to XMP sidecar files. Original image files are never modified.
 
-    python phototag.py scan /Volumes/Book/Photos     # slow, once (resumable)
+    python phototag.py scan /Volumes/MyDrive/Photos     # slow, once (resumable)
     python phototag.py tag                           # fast, re-run after editing tags.toml
     python phototag.py review "Scene|Landscape"      # ranked contact sheet, to tune thresholds
     python phototag.py explain /path/to/IMG_0001.CR2 # everything known about one photo

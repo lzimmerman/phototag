@@ -33,8 +33,8 @@ few descriptive phrases), change thresholds, turn groups off.
 ```sh
 brew install exiftool python@3.12
 brew install python-tk@3.12               # only needed for the window (phototag_gui.py)
-mkdir -p ~/code-ai/scripts/python && cd ~/code-ai/scripts/python
-unzip ~/Downloads/phototag.zip            # creates ./phototag
+mkdir -p ~/projects && cd ~/projects
+unzip /path/to/phototag.zip               # creates ./phototag
 cd phototag
 python3.12 -m venv .venv
 source .venv/bin/activate
@@ -53,23 +53,23 @@ Disk Utility. exFAT or APFS are fine.
 
 ## Use
 
-Activate the environment each time (`cd ~/code-ai/scripts/python/phototag && source .venv/bin/activate`), then:
+Activate the environment each time (`cd ~/projects/phototag && source .venv/bin/activate`), then:
 
 ```sh
 # 1. Try a small sample first (use your drive's real path: drag the folder into Terminal to paste it)
-python phototag.py scan "/Volumes/Book/Photos" --limit 300
+python phototag.py scan "/Volumes/MyDrive/Photos" --limit 300
 python phototag.py tag
 python phototag.py review "Scene|Landscape"     # opens a ranked contact sheet
 
 # 2. Tune tags.toml, re-run `tag` (seconds) and `review` until you like it
 
 # 3. Whole library (resumable: Ctrl-C and re-run continues where it stopped)
-python phototag.py scan "/Volumes/Book/Photos"
+python phototag.py scan "/Volumes/MyDrive/Photos"
 python phototag.py tag
 python phototag.py write --dry-run
 
 # 4. Write one album first and check it in digiKam...
-python phototag.py write "/Volumes/Book/Photos/2019"
+python phototag.py write "/Volumes/MyDrive/Photos/2019"
 
 # 5. ...then the rest (photos already written are skipped)
 python phototag.py write
@@ -398,7 +398,7 @@ If something else breaks, the full error text is what's needed to fix it.
 - **`~/.phototag`:** database, thumbnails, review pages, the library page
   (`library.html`) and the YOLO model.
   Use `--cache PATH` on every command (or set `PHOTOTAG_CACHE`) to keep it
-  elsewhere, e.g. `~/code-ai/scripts/python/phototag/cache`.
+  elsewhere, e.g. `~/projects/phototag/cache`.
 - **`~/.cache/huggingface`:** the SigLIP scene model.
 - **`~/Library/Application Support/Ultralytics`:** a small settings file.
 - **`~/.phototag/backup`:** the first time `write` changes a sidecar that
@@ -437,3 +437,7 @@ If something else breaks, the full error text is what's needed to fix it.
 - `phototag README.pdf` and `phototag with digiKam.pdf` are printable copies of
   this file and `DIGIKAM.md`. After editing either one, run `./make_readme_pdf.sh`
   to rebuild both (needs `brew install pandoc` and Google Chrome).
+
+## License
+
+MIT. See the `LICENSE` file.
